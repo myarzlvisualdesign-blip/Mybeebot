@@ -46,6 +46,8 @@ export function startHealthServer(config, state, runtime, actions) {
         uptimeSeconds: Math.floor(process.uptime()),
         registered: runtime.registered,
         lastPairingRequestAt: runtime.lastPairingRequestAt,
+        qrAvailable: Boolean(runtime.latestQr),
+        lastQrAt: runtime.latestQrAt,
       })
       return
     }
@@ -95,6 +97,28 @@ export function startHealthServer(config, state, runtime, actions) {
           message: error instanceof Error ? error.message : String(error),
         })
       }
+      return
+    }
+
+    if (url.pathname === '/qr') {
+      if (!canAccessAdminSurface(request, config)) {
+        writeJson(response, 403, {
+          ok: false,
+          message: 'QR access is restricted to localhost requests.',
+        })
+        return
+      }
+
+      writeJson(response, 200, {
+        ok: true,
+        registered: runtime.registered,
+        connection: state.connection,
+        qr: runtime.latestQr,
+        generatedAt: runtime.latestQrAt,
+        message: runtime.latestQr
+          ? 'QR is ready to scan.'
+          : 'QR is not available yet. Wait for socket sync or reset the session.',
+      })
       return
     }
 

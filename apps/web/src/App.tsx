@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import QRCode from 'qrcode'
 
 type LiveStatus = {
   name: string
@@ -21,6 +22,8 @@ type BotStatus = {
   uptimeSeconds: number
   registered: boolean
   lastPairingRequestAt: string | null
+  qrAvailable?: boolean
+  lastQrAt?: string | null
 }
 
 type PairingResult = {
@@ -36,6 +39,15 @@ type ResetResult = {
   message?: string
   restartScheduled?: boolean
   clearedSession?: boolean
+}
+
+type BotQrResult = {
+  ok: boolean
+  registered?: boolean
+  connection?: string
+  qr?: string | null
+  generatedAt?: string | null
+  message?: string
 }
 
 const ADMIN_KEY_STORAGE = 'mybeebot-admin-key'
@@ -134,8 +146,12 @@ function App() {
   const [pairingResult, setPairingResult] = useState<PairingResult | null>(null)
   const [pairingError, setPairingError] = useState<string | null>(null)
   const [resetNotice, setResetNotice] = useState<string | null>(null)
+  const [qrImage, setQrImage] = useState<string | null>(null)
+  const [qrMeta, setQrMeta] = useState<BotQrResult | null>(null)
+  const [qrError, setQrError] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
+  const [isLoadingQr, setIsLoadingQr] = useState(false)
 
   async function loadStatus() {
     try {
@@ -313,6 +329,52 @@ function App() {
     }
   }
 
+  async function handleLoadQr() {
+    setIsLoadingQr(true)
+    setPairingError(null)
+    setQrError(null)
+    setResetNotice(null)
+
+    try {
+      const response = await fetch('/api/bot-qr', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          adminKey,
+        }),
+      })
+
+      const payload = (await response.json()) as BotQrResult
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || `QR request failed with ${response.status}`)
+      }
+
+      if (!payload.qr) {
+        throw new Error(payload.message || 'QR is not available yet.')
+      }
+
+      const image = await QRCode.toDataURL(payload.qr, {
+        width: 280,
+        margin: 1,
+        color: {
+          dark: '#edf4ff',
+          light: '#0000',
+        },
+      })
+
+      setQrImage(image)
+      setQrMeta(payload)
+    } catch (error) {
+      setQrImage(null)
+      setQrMeta(null)
+      setQrError(error instanceof Error ? error.message : 'Unable to load QR.')
+    } finally {
+      setIsLoadingQr(false)
+    }
+  }
+
   return (
     <div className="dashboard-shell">
       <div className="ambient ambient-one" />
@@ -466,7 +528,7 @@ function App() {
                         type="button"
                         className="generate-button"
                         onClick={handleGeneratePairingCode}
-                        disabled={isGenerating || isResetting}
+                        disabled={isGenerating || isResetting || isLoadingQr}
                       >
                         {isGenerating ? 'Generating...' : 'Generate Pairing Code'}
                       </button>
@@ -475,9 +537,18 @@ function App() {
                         type="button"
                         className="reset-button"
                         onClick={handleResetSession}
-                        disabled={isGenerating || isResetting}
+                        disabled={isGenerating || isResetting || isLoadingQr}
                       >
                         {isResetting ? 'Resetting...' : 'Reset Session'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="qr-button"
+                        onClick={handleLoadQr}
+                        disabled={isGenerating || isResetting || isLoadingQr}
+                      >
+                        {isLoadingQr ? 'Loading QR...' : 'Load QR'}
                       </button>
                     </div>
                   </div>
@@ -516,9 +587,30 @@ function App() {
                     </small>
                   </div>
 
+                  <div className="qr-result">
+                    <span>Desktop QR fallback</span>
+                    {qrImage ? (
+                      <>
+                        <div className="qr-frame">
+                          <img src={qrImage} alt="Mybeebot WhatsApp QR" />
+                        </div>
+                        <small>
+                          {qrMeta?.generatedAt
+                            ? `QR updated ${new Date(qrMeta.generatedAt).toLocaleTimeString()}`
+                            : 'Open this dashboard on a laptop, then scan with Linked Devices on your phone.'}
+                        </small>
+                      </>
+                    ) : (
+                      <small>
+                        {qrError ||
+                          'If phone-number pairing keeps failing, open this dashboard on desktop and load the QR.'}
+                      </small>
+                    )}
+                  </div>
+
                   <div className="pairing-note">
-                    {pairingError || botStatusError
-                      ? pairingError || botStatusError
+                    {pairingError || botStatusError || qrError
+                      ? pairingError || botStatusError || qrError
                       : resetNotice
                         ? resetNotice
                       : pairingResult?.code

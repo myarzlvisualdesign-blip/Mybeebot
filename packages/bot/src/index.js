@@ -25,6 +25,8 @@ const runtime = {
   registered: false,
   lastPairingCode: null,
   lastPairingRequestAt: null,
+  latestQr: null,
+  latestQrAt: null,
   resetScheduled: false,
   sock: null,
 }
@@ -68,15 +70,7 @@ async function requestPairingCode(phoneNumber) {
   return pairingCode
 }
 
-async function resetSession() {
-  if (runtime.resetScheduled) {
-    return {
-      message: 'Reset already scheduled.',
-      restartScheduled: true,
-      clearedSession: true,
-    }
-  }
-
+async function clearSessionFiles() {
   const entries = await readdir(config.sessionDir, { withFileTypes: true }).catch(() => [])
   await Promise.all(
     entries
@@ -88,14 +82,30 @@ async function resetSession() {
         }),
       ),
   )
+}
+
+function scheduleRestart(message, reason) {
+  if (runtime.resetScheduled) {
+    return {
+      message: 'Reset already scheduled.',
+      restartScheduled: true,
+      clearedSession: true,
+    }
+  }
 
   runtime.registered = false
   runtime.lastPairingCode = null
   runtime.lastPairingRequestAt = null
+  runtime.latestQr = null
+  runtime.latestQrAt = null
   runtime.resetScheduled = true
   state.connection = 'resetting'
-  state.lastDisconnectReason = 'manual-reset'
-  logger.warn('Session reset requested. Restarting bot process...')
+  state.lastDisconnectReason = reason
+  logger.warn(message)
+
+  if (runtime.sock) {
+    runtime.sock.end(new Error(message))
+  }
 
   setTimeout(() => {
     process.exit(0)
@@ -108,6 +118,12 @@ async function resetSession() {
   }
 }
 
+async function resetSession() {
+  await clearSessionFiles()
+
+  return scheduleRestart('Session reset requested. Restarting bot process...', 'manual-reset')
+}
+
 async function boot() {
   await registry.load()
   state.commandCount = registry.count()
@@ -117,7 +133,7 @@ async function boot() {
 
   const sock = makeWASocket({
     auth: authState,
-    browser: Browsers.macOS('Desktop'),
+    browser: Browsers.appropriate('Chrome'),
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
     version,
@@ -135,8 +151,13 @@ async function boot() {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update
 
-    if (qr && !config.usePairingCode) {
-      qrcode.generate(qr, { small: true })
+    if (qr) {
+      runtime.latestQr = qr
+      runtime.latestQrAt = new Date().toISOString()
+
+      if (!config.usePairingCode) {
+        qrcode.generate(qr, { small: true })
+      }
     }
 
     if (connection === 'connecting') {
@@ -149,6 +170,8 @@ async function boot() {
       state.lastConnectedAt = new Date().toISOString()
       state.lastDisconnectReason = null
       runtime.registered = true
+      runtime.latestQr = null
+      runtime.latestQrAt = null
       logger.success(`${config.botName} is connected.`)
     }
 
@@ -163,7 +186,11 @@ async function boot() {
       runtime.registered = Boolean(sock.authState.creds.registered)
 
       if (statusCode === DisconnectReason.loggedOut) {
-        logger.error('Session logged out. Remove the session files and pair again.')
+        await clearSessionFiles()
+        scheduleRestart(
+          'Session logged out. Clearing session files and restarting for a fresh pairing state...',
+          'logged-out',
+        )
         return
       }
 
