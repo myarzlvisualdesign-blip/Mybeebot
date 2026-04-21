@@ -10,11 +10,14 @@ import makeWASocket, {
 import pino from 'pino'
 import { config } from './config.js'
 import { CommandRegistry } from './lib/command-registry.js'
+import { toMention } from './lib/group-utils.js'
 import { startHealthServer } from './lib/health-server.js'
 import { logger } from './lib/logger.js'
 import { cleanNumber, extractText, isOwner } from './lib/message-utils.js'
+import { GroupSettingsStore } from './lib/settings-store.js'
 
 const registry = new CommandRegistry()
+const groupSettings = new GroupSettingsStore(new URL('../data/group-settings.json', import.meta.url))
 const state = {
   commandCount: 0,
   connection: 'booting',
@@ -124,7 +127,41 @@ async function resetSession() {
   return scheduleRestart('Session reset requested. Restarting bot process...', 'manual-reset')
 }
 
+async function handleGroupParticipantsUpdate(sock, event) {
+  const settings = groupSettings.get(event.id)
+  if (
+    (event.action !== 'add' || !settings.welcome) &&
+    (event.action !== 'remove' || !settings.goodbye)
+  ) {
+    return
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(event.id)
+    const mentions = event.participants || []
+    const names = mentions.map((jid) => toMention(jid)).join(', ')
+    const subject = metadata.subject || 'this group'
+
+    if (event.action === 'add' && settings.welcome) {
+      await sock.sendMessage(event.id, {
+        text: [`Welcome ${names}`, '', `Glad to have you in *${subject}*.`].join('\n'),
+        mentions,
+      })
+    }
+
+    if (event.action === 'remove' && settings.goodbye) {
+      await sock.sendMessage(event.id, {
+        text: [`Goodbye ${names}`, '', `You have left *${subject}*.`].join('\n'),
+        mentions,
+      })
+    }
+  } catch (error) {
+    logger.warn(`Group participant update hook failed: ${error.message}`)
+  }
+}
+
 async function boot() {
+  await groupSettings.load()
   await registry.load()
   state.commandCount = registry.count()
 
@@ -248,6 +285,7 @@ async function boot() {
       await command.execute({
         args,
         config,
+        groupSettings,
         message,
         registry,
         reply,
@@ -258,6 +296,10 @@ async function boot() {
       logger.error(`Command ${command.name} failed: ${error.message}`)
       await reply(`Command failed: ${error.message}`)
     }
+  })
+
+  sock.ev.on('group-participants.update', async (event) => {
+    await handleGroupParticipantsUpdate(sock, event)
   })
 }
 

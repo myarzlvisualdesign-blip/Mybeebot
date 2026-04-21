@@ -16,6 +16,71 @@ export function toMention(id) {
   return `@${String(id || '').split('@')[0]}`
 }
 
+export function normalizeJid(id) {
+  return String(id || '').replace(/:\d+@/, '@')
+}
+
+function extractContextInfo(payload) {
+  if (!payload) {
+    return null
+  }
+
+  if (payload.message) {
+    return extractContextInfo(payload.message)
+  }
+
+  if (payload.ephemeralMessage?.message) {
+    return extractContextInfo(payload.ephemeralMessage.message)
+  }
+
+  if (payload.viewOnceMessage?.message) {
+    return extractContextInfo(payload.viewOnceMessage.message)
+  }
+
+  return (
+    payload.extendedTextMessage?.contextInfo ||
+    payload.imageMessage?.contextInfo ||
+    payload.videoMessage?.contextInfo ||
+    payload.documentMessage?.contextInfo ||
+    payload.stickerMessage?.contextInfo ||
+    null
+  )
+}
+
+export function getTargetJids(message, args = []) {
+  const contextInfo = extractContextInfo(message)
+  const targets = new Set()
+
+  for (const jid of contextInfo?.mentionedJid || []) {
+    targets.add(normalizeJid(jid))
+  }
+
+  if (contextInfo?.participant) {
+    targets.add(normalizeJid(contextInfo.participant))
+  }
+
+  const rawNumbers = args.join(' ').match(/\d{5,}/g) || []
+  for (const number of rawNumbers) {
+    targets.add(`${cleanNumber(number)}@s.whatsapp.net`)
+  }
+
+  return [...targets].filter((jid) => jid.endsWith('@s.whatsapp.net'))
+}
+
+export function parseToggle(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+
+  if (['on', 'true', '1', 'yes', 'enable', 'enabled'].includes(normalized)) {
+    return true
+  }
+
+  if (['off', 'false', '0', 'no', 'disable', 'disabled'].includes(normalized)) {
+    return false
+  }
+
+  return null
+}
+
 export async function getGroupContext(sock, message) {
   const jid = getChatJid(message)
   if (!jid.endsWith('@g.us')) {
@@ -40,6 +105,10 @@ export async function ensureGroupAdmin(sock, message, config) {
   const participant = participants.find((entry) => entry.id === sender)
   const owner = isConfiguredOwner(sender, config) || Boolean(message?.key?.fromMe)
   const admin = owner || Boolean(participant?.admin)
+  const botParticipant = participants.find(
+    (entry) => normalizeJid(entry.id) === normalizeJid(sock.user?.id),
+  )
+  const botAdmin = Boolean(botParticipant?.admin)
 
   if (!admin) {
     throw new Error('This command is only for group admins or the owner.')
@@ -52,5 +121,6 @@ export async function ensureGroupAdmin(sock, message, config) {
     sender,
     owner,
     admin,
+    botAdmin,
   }
 }
