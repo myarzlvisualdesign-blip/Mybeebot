@@ -109,6 +109,7 @@ const commandExamples: Record<string, string> = {
 const railItems = [
   { short: 'OV', label: 'Overview', section: 'overview' },
   { short: 'PR', label: 'Pairing', section: 'pairing' },
+  { short: 'US', label: 'Use Bot', section: 'use' },
   { short: 'CM', label: 'Commands', section: 'commands' },
   { short: 'API', label: 'API', section: 'api' },
   { short: 'LG', label: 'Activity', section: 'activity' },
@@ -428,6 +429,10 @@ function App() {
   const activeCommands = status?.commands?.length
     ? status.commands
     : Object.keys(commandDescriptions)
+  const normalizedPhone = normalizePhone(pairPhone)
+  const isLinked = Boolean(botStatus?.registered)
+  const isBotReady = isLinked && botStatus?.connection === 'open'
+  const starterCommands = ['.menu', '.ping', '.alive', '.echo']
 
   const filteredCommands = activeCommands.filter((command) => {
     if (!searchNeedle) {
@@ -528,6 +533,50 @@ function App() {
   ].filter((link) => !searchNeedle || `${link.label} ${link.href}`.toLowerCase().includes(searchNeedle))
 
   const totalMatches = filteredCommands.length + filteredEndpoints.length + runtimeFeed.length + controlLinks.length
+
+  const nextAction = (() => {
+    if (!adminKey) {
+      return {
+        title: 'Paste the admin key first',
+        body: 'The dashboard controls stay locked until you fill the admin key in the pairing panel.',
+        primaryLabel: 'Go to Pairing Panel',
+        primaryAction: () => jumpToSection('pairing'),
+        secondaryLabel: 'Refresh Status',
+        secondaryAction: () => void refreshAll({ announce: true }),
+      }
+    }
+
+    if (isBotReady) {
+      return {
+        title: 'Bot already connected',
+        body: 'Open WhatsApp and send .menu, .ping, or .alive to start using the bot immediately.',
+        primaryLabel: 'Copy .menu',
+        primaryAction: () => void copyText('.menu', '.menu starter'),
+        secondaryLabel: 'Jump to Use Bot',
+        secondaryAction: () => jumpToSection('use'),
+      }
+    }
+
+    if (botStatus?.qrAvailable) {
+      return {
+        title: 'Connect WhatsApp now',
+        body: 'For the same phone, use Get Pairing Code. On laptop or desktop, use Show QR to scan from Linked Devices.',
+        primaryLabel: 'Get Pairing Code',
+        primaryAction: () => void handleGeneratePairingCode(),
+        secondaryLabel: 'Show QR',
+        secondaryAction: () => void handleLoadQr(),
+      }
+    }
+
+    return {
+      title: 'Repair the session first',
+      body: 'If the runtime is stuck or no QR is available yet, reset the session once and wait a few seconds for a clean reconnect.',
+      primaryLabel: 'Reset Session',
+      primaryAction: () => void handleResetSession(),
+      secondaryLabel: 'Refresh Status',
+      secondaryAction: () => void refreshAll({ announce: true }),
+    }
+  })()
 
   async function inspectEndpoint(
     key: string,
@@ -848,6 +897,61 @@ function App() {
                 </div>
               </article>
 
+              <article className="panel guide-panel reveal reveal-delay-2">
+                <div className="guide-copy">
+                  <p className="tiny-label">Start Here</p>
+                  <h3>{nextAction.title}</h3>
+                  <p>{nextAction.body}</p>
+                </div>
+
+                <div className="guide-actions">
+                  <button
+                    type="button"
+                    className="guide-button primary"
+                    onClick={nextAction.primaryAction}
+                  >
+                    {nextAction.primaryLabel}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="guide-button"
+                    onClick={nextAction.secondaryAction}
+                  >
+                    {nextAction.secondaryLabel}
+                  </button>
+
+                  <a
+                    className="guide-button link"
+                    href="https://web.whatsapp.com/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open WhatsApp Web
+                  </a>
+                </div>
+
+                <div className="guide-grid">
+                  <article className="guide-card">
+                    <span>1. Unlock</span>
+                    <strong>Paste admin key</strong>
+                    <p>Fill the admin key once. The dashboard saves it in your browser.</p>
+                  </article>
+
+                  <article className="guide-card">
+                    <span>2. Connect</span>
+                    <strong>Code or QR</strong>
+                    <p>Use code for phone-number linking, or use QR when scanning from desktop is easier.</p>
+                  </article>
+
+                  <article className="guide-card">
+                    <span>3. Use bot</span>
+                    <strong>Send a starter command</strong>
+                    <p>After linked, copy `.menu`, open WhatsApp, and send it to your own chat or any allowed chat.</p>
+                  </article>
+                </div>
+              </article>
+
               <div className="split-grid">
                 <article className="panel queue-panel reveal reveal-delay-3">
                   <div className="panel-head">
@@ -924,7 +1028,7 @@ function App() {
                         onClick={handleGeneratePairingCode}
                         disabled={isGenerating || isResetting || isLoadingQr}
                       >
-                        {isGenerating ? 'Generating...' : 'Generate Code'}
+                        {isGenerating ? 'Generating...' : 'Get Pairing Code'}
                       </button>
 
                       <button
@@ -942,14 +1046,14 @@ function App() {
                         onClick={handleLoadQr}
                         disabled={isGenerating || isResetting || isLoadingQr}
                       >
-                        {isLoadingQr ? 'Loading QR...' : 'Load QR'}
+                        {isLoadingQr ? 'Loading QR...' : 'Show QR to Scan'}
                       </button>
                     </div>
                   </div>
 
                   <div className="pairing-command">
                     <span>Phone format</span>
-                    <code>{normalizePhone(pairPhone) || '62xxxxxxxxxxx'}</code>
+                    <code>{normalizedPhone || '62xxxxxxxxxxx'}</code>
                   </div>
 
                   <div className="pairing-grid">
@@ -1037,6 +1141,83 @@ function App() {
                   <div className="pairing-note">{pairingMessage}</div>
                 </article>
               </div>
+
+              <article id="section-use" className="panel use-panel reveal reveal-delay-4">
+                <div className="panel-head">
+                  <div>
+                    <p className="tiny-label">Use Bot</p>
+                    <h3>What to do after linking</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost-action"
+                    onClick={() => void refreshAll({ announce: true })}
+                  >
+                    Check live status
+                  </button>
+                </div>
+
+                <div className="use-grid">
+                  <div className="use-card highlight">
+                    <span>Current state</span>
+                    <strong>{isBotReady ? 'Ready to use' : isLinked ? 'Linked, waiting for socket' : 'Not linked yet'}</strong>
+                    <p>
+                      {isBotReady
+                        ? 'Open WhatsApp now and send one of the starter commands below.'
+                        : isLinked
+                          ? 'The device is linked, but the socket has not fully opened yet. Wait a moment and refresh.'
+                          : 'Connect the device first from the pairing panel, then come back here to use the bot.'}
+                    </p>
+                  </div>
+
+                  <div className="use-card">
+                    <span>Open chat</span>
+                    <strong>Use your own WhatsApp</strong>
+                    <p>After linked, send commands from your own chat, message yourself, or any chat allowed by bot mode.</p>
+                    <a
+                      className="use-link"
+                      href="https://web.whatsapp.com/"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open WhatsApp Web
+                    </a>
+                  </div>
+                </div>
+
+                <div className="starter-grid">
+                  {starterCommands.map((command) => (
+                    <article key={command} className="starter-card">
+                      <strong>{command}</strong>
+                      <p>{commandDescriptions[command] ?? 'Starter command.'}</p>
+                      <button
+                        type="button"
+                        className="command-action"
+                        onClick={() =>
+                          void copyText(commandExamples[command] ?? command, `${command} starter`)
+                        }
+                      >
+                        Copy command
+                      </button>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="usage-steps">
+                  <div className="usage-step">
+                    <span>Step 1</span>
+                    <p>Link the device from the pairing panel.</p>
+                  </div>
+                  <div className="usage-step">
+                    <span>Step 2</span>
+                    <p>Wait until `Registered: yes` and ideally `Runtime: open`.</p>
+                  </div>
+                  <div className="usage-step">
+                    <span>Step 3</span>
+                    <p>Copy `.menu` or `.ping`, open WhatsApp, then send it.</p>
+                  </div>
+                </div>
+              </article>
 
               <article
                 id="section-commands"

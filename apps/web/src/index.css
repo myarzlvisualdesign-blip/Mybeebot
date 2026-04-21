@@ -463,6 +463,8 @@ kbd {
 .pairing-panel,
 .command-panel,
 .api-panel,
+.guide-panel,
+.use-panel,
 .side-card {
   padding: 22px;
 }
@@ -515,6 +517,130 @@ kbd {
   justify-self: end;
   color: #dbe3ff;
   font-size: 0.76rem;
+}
+
+.guide-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.guide-copy p:last-child {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.guide-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.guide-button {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(129, 161, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #eef5ff;
+  font-weight: 800;
+  text-align: center;
+  cursor: pointer;
+}
+
+.guide-button.primary {
+  border: 0;
+  color: #091327;
+  background: linear-gradient(90deg, var(--gold), var(--cyan));
+}
+
+.guide-button.link {
+  text-decoration: none;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.guide-card,
+.use-card,
+.starter-card,
+.usage-step {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.guide-card span,
+.use-card span,
+.usage-step span {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.guide-card strong,
+.use-card strong,
+.starter-card strong {
+  display: block;
+  font-size: 1.08rem;
+  margin-bottom: 10px;
+}
+
+.guide-card p,
+.use-card p,
+.starter-card p,
+.usage-step p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.use-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.use-card.highlight {
+  background:
+    radial-gradient(circle at 12% 20%, rgba(110, 199, 255, 0.18), transparent 36%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.use-link {
+  display: inline-flex;
+  margin-top: 14px;
+  color: #eef4ff;
+  font-weight: 700;
+}
+
+.starter-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.starter-card {
+  display: grid;
+  gap: 12px;
+}
+
+.usage-steps {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .pairing-command {
@@ -1098,6 +1224,9 @@ kbd {
   .split-grid,
   .command-grid,
   .api-grid,
+  .guide-grid,
+  .starter-grid,
+  .usage-steps,
   .hero-metrics {
     grid-template-columns: 1fr;
   }
@@ -1145,6 +1274,11 @@ kbd {
     min-width: 0;
   }
 
+  .guide-actions,
+  .use-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workflow-row {
     grid-template-columns: 1fr;
   }
@@ -1160,6 +1294,8 @@ kbd {
   .pairing-panel,
   .command-panel,
   .api-panel,
+  .guide-panel,
+  .use-panel,
   .side-card {
     padding: 18px;
   }
