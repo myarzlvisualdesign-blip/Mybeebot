@@ -3,11 +3,11 @@ import { ensureGroupAdmin } from '../lib/group-utils.js'
 export default {
   name: 'hidetag',
   aliases: ['silenttag'],
-  category: 'group',
-  description: 'Send a hidden mention to all members. Admin or owner only.',
+  category: 'grup',
+  description: 'Kirim mention tersembunyi ke semua anggota.',
   async execute({ args, config, message, reply, sock }) {
     if (!args.length) {
-      await reply('Usage: .hidetag your message here')
+      await reply(`Contoh: ${config.prefix}hidetag rapat mulai sekarang`)
       return
     }
 

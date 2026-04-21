@@ -3,15 +3,15 @@ import { formatRuntime } from '../lib/message-utils.js'
 export default {
   name: 'uptime',
   aliases: ['runtime'],
-  category: 'core',
-  description: 'Show how long the bot process has been running.',
+  category: 'inti',
+  description: 'Tampilkan sudah berapa lama bot berjalan.',
   async execute({ reply, state }) {
     await reply(
       [
-        '*Mybeebot uptime*',
+        '*Uptime Mybeebot*',
         '',
         `Runtime: ${formatRuntime(process.uptime())}`,
-        `Connection: ${state.connection}`,
+        `Koneksi: ${state.connection}`,
       ].join('\n'),
     )
   },

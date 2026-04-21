@@ -3,12 +3,12 @@ import { ensureGroupAdmin, getTargetJids, normalizeJid, toMention } from '../lib
 export default {
   name: 'kick',
   aliases: ['remove'],
-  category: 'group',
-  description: 'Remove mentioned, quoted, or typed members. Admin or owner only.',
+  category: 'grup',
+  description: 'Keluarkan anggota yang di-tag, dibalas, atau ditulis nomornya.',
   async execute({ args, config, message, reply, sock }) {
     const context = await ensureGroupAdmin(sock, message, config)
     if (!context.botAdmin) {
-      await reply('Bot must be an admin before it can remove members.')
+      await reply('Bot harus jadi admin dulu sebelum bisa mengeluarkan anggota.')
       return
     }
 
@@ -17,11 +17,11 @@ export default {
     )
 
     if (!targets.length) {
-      await reply('Usage: .kick @user or reply to a member message.')
+      await reply(`Contoh: ${config.prefix}kick @user atau balas pesan target.`)
       return
     }
 
     await sock.groupParticipantsUpdate(context.jid, targets, 'remove')
-    await reply(`Removed: ${targets.map(toMention).join(', ')}`)
+    await reply(`Berhasil mengeluarkan: ${targets.map(toMention).join(', ')}`)
   },
 }

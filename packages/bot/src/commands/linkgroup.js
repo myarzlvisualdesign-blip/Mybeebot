@@ -3,21 +3,21 @@ import { ensureGroupAdmin } from '../lib/group-utils.js'
 export default {
   name: 'linkgroup',
   aliases: ['grouplink'],
-  category: 'group',
-  description: 'Show the current group invite link. Admin or owner only.',
+  category: 'grup',
+  description: 'Tampilkan link undangan grup saat ini.',
   async execute({ config, message, reply, sock }) {
     const context = await ensureGroupAdmin(sock, message, config)
     if (!context.botAdmin) {
-      await reply('Bot must be an admin before it can read the invite link.')
+      await reply('Bot harus jadi admin dulu sebelum bisa membaca link grup.')
       return
     }
 
     const code = await sock.groupInviteCode(context.jid)
     if (!code) {
-      await reply('Unable to read the invite link for this group.')
+      await reply('Link undangan grup tidak bisa diambil.')
       return
     }
 
-    await reply(`Group invite link:\nhttps://chat.whatsapp.com/${code}`)
+    await reply(`Link undangan grup:\nhttps://chat.whatsapp.com/${code}`)
   },
 }

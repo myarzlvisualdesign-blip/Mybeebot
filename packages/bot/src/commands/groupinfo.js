@@ -3,22 +3,22 @@ import { getGroupContext, toMention } from '../lib/group-utils.js'
 export default {
   name: 'groupinfo',
   aliases: ['gcinfo', 'infogc'],
-  category: 'group',
-  description: 'Show basic info about the current group.',
+  category: 'grup',
+  description: 'Tampilkan info dasar grup saat ini.',
   async execute({ message, reply, sock }) {
     const { metadata, participants } = await getGroupContext(sock, message)
     const admins = participants.filter((entry) => entry.admin)
 
     await reply(
       [
-        '*Group info*',
+        '*Info grup*',
         '',
-        `Name: ${metadata.subject || '-'}`,
+        `Nama: ${metadata.subject || '-'}`,
         `ID: ${metadata.id}`,
-        `Members: ${participants.length}`,
-        `Admins: ${admins.length}`,
-        `Owner: ${metadata.owner ? toMention(metadata.owner) : 'not exposed'}`,
-        `Description: ${metadata.desc || 'No description'}`,
+        `Member: ${participants.length}`,
+        `Admin: ${admins.length}`,
+        `Owner: ${metadata.owner ? toMention(metadata.owner) : 'tidak terlihat'}`,
+        `Deskripsi: ${metadata.desc || 'Belum ada deskripsi'}`,
       ].join('\n'),
     )
   },

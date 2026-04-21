@@ -70,11 +70,11 @@ export function getTargetJids(message, args = []) {
 export function parseToggle(value) {
   const normalized = String(value || '').trim().toLowerCase()
 
-  if (['on', 'true', '1', 'yes', 'enable', 'enabled'].includes(normalized)) {
+  if (['on', 'true', '1', 'yes', 'enable', 'enabled', 'aktif', 'nyala'].includes(normalized)) {
     return true
   }
 
-  if (['off', 'false', '0', 'no', 'disable', 'disabled'].includes(normalized)) {
+  if (['off', 'false', '0', 'no', 'disable', 'disabled', 'mati'].includes(normalized)) {
     return false
   }
 
@@ -84,7 +84,7 @@ export function parseToggle(value) {
 export async function getGroupContext(sock, message) {
   const jid = getChatJid(message)
   if (!jid.endsWith('@g.us')) {
-    throw new Error('This command only works in groups.')
+    throw new Error('Perintah ini hanya bisa dipakai di grup.')
   }
 
   const metadata = await sock.groupMetadata(jid)
@@ -111,7 +111,7 @@ export async function ensureGroupAdmin(sock, message, config) {
   const botAdmin = Boolean(botParticipant?.admin)
 
   if (!admin) {
-    throw new Error('This command is only for group admins or the owner.')
+    throw new Error('Perintah ini khusus admin grup atau owner bot.')
   }
 
   return {

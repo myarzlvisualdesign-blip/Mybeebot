@@ -3,16 +3,16 @@ import { getChatJid, getSenderJid, isGroupChat } from '../lib/group-utils.js'
 export default {
   name: 'id',
   aliases: ['chatid'],
-  category: 'utility',
-  description: 'Show the current chat ID and sender ID.',
+  category: 'utilitas',
+  description: 'Tampilkan ID chat dan ID pengirim.',
   async execute({ message, reply }) {
     await reply(
       [
-        '*Chat identity*',
+        '*Identitas chat*',
         '',
-        `Chat ID: ${getChatJid(message) || 'unknown'}`,
-        `Sender ID: ${getSenderJid(message) || 'unknown'}`,
-        `Group chat: ${isGroupChat(message) ? 'yes' : 'no'}`,
+        `Chat ID: ${getChatJid(message) || 'tidak diketahui'}`,
+        `Sender ID: ${getSenderJid(message) || 'tidak diketahui'}`,
+        `Chat grup: ${isGroupChat(message) ? 'ya' : 'tidak'}`,
       ].join('\n'),
     )
   },

@@ -1,10 +1,11 @@
 export default {
   name: 'reload',
   category: 'owner',
-  description: 'Reload command files.',
+  description: 'Muat ulang semua file command.',
   ownerOnly: true,
-  async execute({ registry, reply }) {
+  async execute({ registry, reply, state }) {
     await registry.load()
-    await reply(`Reloaded ${registry.count()} command files.`)
+    state.commandCount = registry.count()
+    await reply(`Berhasil reload ${registry.count()} command.`)
   },
 }

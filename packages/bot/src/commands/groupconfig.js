@@ -3,18 +3,22 @@ import { ensureGroupAdmin } from '../lib/group-utils.js'
 export default {
   name: 'groupconfig',
   aliases: ['gcconfig', 'settings'],
-  category: 'group',
-  description: 'Show the current bot settings for this group. Admin or owner only.',
+  category: 'grup',
+  description: 'Tampilkan semua pengaturan bot untuk grup ini.',
   async execute({ config, groupSettings, message, reply, sock }) {
     const context = await ensureGroupAdmin(sock, message, config)
     const settings = groupSettings.get(context.jid)
 
     await reply(
       [
-        '*Group bot settings*',
+        '*Pengaturan bot grup*',
         '',
-        `Welcome: ${settings.welcome ? 'on' : 'off'}`,
-        `Goodbye: ${settings.goodbye ? 'on' : 'off'}`,
+        `Welcome card: ${settings.welcome ? 'on' : 'off'}`,
+        `Goodbye card: ${settings.goodbye ? 'on' : 'off'}`,
+        `Anti-link: ${settings.antiLink}`,
+        `AI reply: ${settings.aiReply ? 'on' : 'off'}`,
+        `Auto-responder: ${settings.autoResponder ? 'on' : 'off'}`,
+        `Jumlah balasan otomatis: ${Object.keys(settings.autoReplies || {}).length}`,
       ].join('\n'),
     )
   },

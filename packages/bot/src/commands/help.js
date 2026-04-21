@@ -1,15 +1,15 @@
 export default {
   name: 'help',
   aliases: ['menu'],
-  category: 'core',
-  description: 'List all loaded commands.',
+  category: 'inti',
+  description: 'Tampilkan semua command yang aktif.',
   async execute({ config, registry, reply }) {
     const sections = []
 
     for (const [category, commands] of registry.grouped()) {
       const lines = commands.map((command) => {
         const aliasText = command.aliases.length
-          ? ` (aliases: ${command.aliases.join(', ')})`
+          ? ` (alias: ${command.aliases.join(', ')})`
           : ''
         return `${config.prefix}${command.name}${aliasText} - ${command.description}`
       })
@@ -17,8 +17,6 @@ export default {
       sections.push(`*${category.toUpperCase()}*\n${lines.join('\n')}`)
     }
 
-    await reply(
-      [`*${config.botName} command deck*`, '', ...sections].join('\n\n'),
-    )
+    await reply([`*Menu ${config.botName}*`, '', ...sections].join('\n\n'))
   },
 }

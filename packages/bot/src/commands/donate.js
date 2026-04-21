@@ -2,17 +2,17 @@ export default {
   name: 'donate',
   aliases: ['donasi', 'support'],
   category: 'info',
-  description: 'Show how to support the bot owner.',
+  description: 'Tampilkan cara mendukung owner bot.',
   async execute({ config, reply }) {
-    const number = config.ownerNumbers[0] ? `+${config.ownerNumbers[0]}` : 'owner number not set'
+    const number = config.ownerNumbers[0] ? `+${config.ownerNumbers[0]}` : 'nomor owner belum diatur'
 
     await reply(
       [
-        `*Support ${config.botName}*`,
+        `*Dukung ${config.botName}*`,
         '',
-        'If you want to support development, contact the owner directly.',
+        'Kalau mau dukung pengembangan bot, langsung hubungi owner ya.',
         `Owner: ${config.ownerName}`,
-        `Contact: ${number}`,
+        `Kontak: ${number}`,
         `Website: ${config.websiteUrl}`,
       ].join('\n'),
     )

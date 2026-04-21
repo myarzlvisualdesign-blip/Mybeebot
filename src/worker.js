@@ -1,11 +1,16 @@
 const commands = [
   ".add",
   ".admins",
+  ".ai",
+  ".aireply",
+  ".antilink",
+  ".autoresponder",
   ".menu",
   ".help",
   ".ping",
   ".alive",
   ".close",
+  ".delreply",
   ".demote",
   ".goodbye",
   ".groupconfig",
@@ -15,8 +20,10 @@ const commands = [
   ".open",
   ".promote",
   ".repo",
+  ".setreply",
   ".setdesc",
   ".setsubject",
+  ".sticker",
   ".uptime",
   ".rules",
   ".welcome",
@@ -26,6 +33,9 @@ const commands = [
   ".tagall",
   ".hidetag",
   ".echo",
+  ".ytmp3",
+  ".ytmp4",
+  ".listreply",
   ".reload"
 ];
 
@@ -255,7 +265,7 @@ export default {
         botHealthProxy: `${url.origin}/api/bot-health`,
         botMetaProxy: `${url.origin}/api/bot-meta`,
         botTunnelConfigured: Boolean(env.BOT_TUNNEL_URL),
-        note: "The live edge deploy hosts the public companion site and status APIs. The WhatsApp socket runtime stays in the Node.js bot package.",
+        note: "Deploy edge live ini menampung website publik dan API status. Runtime WhatsApp tetap jalan di paket bot Node.js.",
       });
     }
 

@@ -1,10 +1,10 @@
 export default {
   name: 'echo',
-  category: 'utility',
-  description: 'Echo text back to the chat.',
-  async execute({ args, reply }) {
+  category: 'utilitas',
+  description: 'Kirim ulang teks ke chat.',
+  async execute({ args, config, reply }) {
     if (!args.length) {
-      await reply('Usage: .echo your text here')
+      await reply(`Contoh: ${config.prefix}echo halo semua`)
       return
     }
 

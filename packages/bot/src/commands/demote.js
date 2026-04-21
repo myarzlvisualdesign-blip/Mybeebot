@@ -3,22 +3,22 @@ import { ensureGroupAdmin, getTargetJids, toMention } from '../lib/group-utils.j
 export default {
   name: 'demote',
   aliases: [],
-  category: 'group',
-  description: 'Remove admin status from members. Admin or owner only.',
+  category: 'grup',
+  description: 'Cabut status admin dari anggota yang dipilih.',
   async execute({ args, config, message, reply, sock }) {
     const context = await ensureGroupAdmin(sock, message, config)
     if (!context.botAdmin) {
-      await reply('Bot must be an admin before it can demote members.')
+      await reply('Bot harus jadi admin dulu sebelum bisa menurunkan admin.')
       return
     }
 
     const targets = getTargetJids(message, args)
     if (!targets.length) {
-      await reply('Usage: .demote @user or reply to a member message.')
+      await reply(`Contoh: ${config.prefix}demote @user atau balas pesan target.`)
       return
     }
 
     await sock.groupParticipantsUpdate(context.jid, targets, 'demote')
-    await reply(`Demoted: ${targets.map(toMention).join(', ')}`)
+    await reply(`Berhasil menurunkan admin: ${targets.map(toMention).join(', ')}`)
   },
 }

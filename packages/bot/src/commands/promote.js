@@ -3,22 +3,22 @@ import { ensureGroupAdmin, getTargetJids, toMention } from '../lib/group-utils.j
 export default {
   name: 'promote',
   aliases: [],
-  category: 'group',
-  description: 'Promote members to admin. Admin or owner only.',
+  category: 'grup',
+  description: 'Naikkan anggota jadi admin.',
   async execute({ args, config, message, reply, sock }) {
     const context = await ensureGroupAdmin(sock, message, config)
     if (!context.botAdmin) {
-      await reply('Bot must be an admin before it can promote members.')
+      await reply('Bot harus jadi admin dulu sebelum bisa menaikkan admin.')
       return
     }
 
     const targets = getTargetJids(message, args)
     if (!targets.length) {
-      await reply('Usage: .promote @user or reply to a member message.')
+      await reply(`Contoh: ${config.prefix}promote @user atau balas pesan target.`)
       return
     }
 
     await sock.groupParticipantsUpdate(context.jid, targets, 'promote')
-    await reply(`Promoted: ${targets.map(toMention).join(', ')}`)
+    await reply(`Berhasil menaikkan admin: ${targets.map(toMention).join(', ')}`)
   },
 }

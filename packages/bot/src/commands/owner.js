@@ -1,19 +1,19 @@
 export default {
   name: 'owner',
   aliases: ['creator', 'contact'],
-  category: 'core',
-  description: 'Show owner identity and contact numbers.',
+  category: 'inti',
+  description: 'Tampilkan identitas owner dan nomor kontaknya.',
   async execute({ config, reply }) {
     const numbers = config.ownerNumbers.length
       ? config.ownerNumbers.map((number) => `+${number}`).join(', ')
-      : 'Not configured'
+      : 'Belum diatur'
 
     await reply(
       [
-        `*${config.botName} owner info*`,
+        `*Info owner ${config.botName}*`,
         '',
-        `Name: ${config.ownerName}`,
-        `Numbers: ${numbers}`,
+        `Nama: ${config.ownerName}`,
+        `Nomor: ${numbers}`,
         `Website: ${config.websiteUrl}`,
       ].join('\n'),
     )

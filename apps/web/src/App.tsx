@@ -96,22 +96,32 @@ const ADMIN_KEY_STORAGE = 'mybeebot-admin-key'
 const MAX_ACTIVITY = 10
 
 const commandDescriptions: Record<string, string> = {
-  '.menu': 'Open the main control sheet.',
-  '.help': 'Readable command summary.',
-  '.ping': 'Latency and runtime check.',
-  '.alive': 'Current identity and health.',
-  '.owner': 'Show owner identity and contact.',
-  '.repo': 'Jump to the repository.',
-  '.uptime': 'Show bot runtime duration.',
-  '.rules': 'Show the usage rules.',
-  '.donate': 'Show support and donation info.',
-  '.id': 'Show current chat and sender ID.',
-  '.groupinfo': 'Show current group information.',
-  '.admins': 'Mention the group admins.',
-  '.tagall': 'Mention everyone in the group.',
-  '.hidetag': 'Send a hidden mention to all members.',
-  '.echo': 'Fast command response test.',
-  '.reload': 'Reload modules for the owner.',
+  '.menu': 'Buka daftar perintah utama.',
+  '.help': 'Ringkasan perintah yang aktif.',
+  '.ping': 'Cek latency dan respons bot.',
+  '.alive': 'Lihat identitas dan status bot.',
+  '.owner': 'Tampilkan info owner.',
+  '.repo': 'Buka repository project.',
+  '.uptime': 'Lihat lama bot berjalan.',
+  '.rules': 'Tampilkan aturan pemakaian.',
+  '.donate': 'Info dukungan dan donasi.',
+  '.id': 'Lihat ID chat dan pengirim.',
+  '.groupinfo': 'Info grup saat ini.',
+  '.admins': 'Tandai admin grup.',
+  '.tagall': 'Tandai semua anggota.',
+  '.hidetag': 'Mention semua anggota secara tersembunyi.',
+  '.echo': 'Tes balasan cepat.',
+  '.reload': 'Muat ulang perintah untuk owner.',
+  '.ai': 'Tanya AI langsung dari chat.',
+  '.aireply': 'Aktifkan AI reply otomatis per grup.',
+  '.ytmp3': 'Unduh audio dari link video.',
+  '.ytmp4': 'Unduh video dari link.',
+  '.sticker': 'Buat stiker dari gambar atau video.',
+  '.antilink': 'Atur proteksi link per grup.',
+  '.autoresponder': 'Atur auto-responder per grup.',
+  '.setreply': 'Simpan balasan otomatis.',
+  '.delreply': 'Hapus balasan otomatis.',
+  '.listreply': 'Lihat daftar balasan otomatis.',
 }
 
 const commandExamples: Record<string, string> = {
@@ -126,62 +136,72 @@ const commandExamples: Record<string, string> = {
   '.goodbye': '.goodbye on',
   '.groupconfig': '.groupconfig',
   '.groupinfo': '.groupinfo',
-  '.hidetag': '.hidetag silent message here',
+  '.hidetag': '.hidetag pesan diam-diam untuk semua',
+  '.ai': '.ai bikinkan caption promo kopi susu',
+  '.aireply': '.aireply on',
+  '.antilink': '.antilink warn',
+  '.autoresponder': '.autoresponder on',
+  '.delreply': '.delreply halo',
   '.owner': '.owner',
   '.kick': '.kick @user',
   '.linkgroup': '.linkgroup',
+  '.listreply': '.listreply',
   '.open': '.open',
   '.promote': '.promote @user',
   '.repo': '.repo',
+  '.setreply': '.setreply halo|Halo juga, ada yang bisa dibantu?',
+  '.sticker': '.sticker',
   '.uptime': '.uptime',
   '.rules': '.rules',
-  '.setdesc': '.setdesc New group description',
-  '.setsubject': '.setsubject New Group Name',
+  '.setdesc': '.setdesc Deskripsi grup baru',
+  '.setsubject': '.setsubject Nama Grup Baru',
   '.welcome': '.welcome on',
   '.donate': '.donate',
   '.id': '.id',
-  '.tagall': '.tagall Attention everyone',
+  '.tagall': '.tagall Perhatian semuanya',
   '.echo': '.echo halo',
   '.reload': '.reload',
+  '.ytmp3': '.ytmp3 https://youtu.be/xxxx',
+  '.ytmp4': '.ytmp4 https://youtu.be/xxxx',
 }
 
 const railItems = [
-  { short: 'OV', label: 'Overview', section: 'overview' },
-  { short: 'PR', label: 'Pairing', section: 'pairing' },
-  { short: 'US', label: 'Use Bot', section: 'use' },
-  { short: 'CM', label: 'Commands', section: 'commands' },
+  { short: 'OV', label: 'Ringkasan', section: 'overview' },
+  { short: 'PR', label: 'Hubungkan', section: 'pairing' },
+  { short: 'US', label: 'Pakai Bot', section: 'use' },
+  { short: 'CM', label: 'Perintah', section: 'commands' },
   { short: 'API', label: 'API', section: 'api' },
-  { short: 'LG', label: 'Activity', section: 'activity' },
+  { short: 'LG', label: 'Aktivitas', section: 'activity' },
 ] as const
 
 const endpointCatalog = [
   {
     key: 'status',
-    label: 'Edge status',
+    label: 'Status edge',
     method: 'GET',
     path: '/api/status',
-    description: 'Cloudflare route, runtime, and command registry.',
+    description: 'Rute Cloudflare, runtime, dan daftar perintah.',
   },
   {
     key: 'meta',
-    label: 'Edge meta',
+    label: 'Metadata edge',
     method: 'GET',
     path: '/api/meta',
-    description: 'Deploy metadata and proxy configuration.',
+    description: 'Metadata deploy dan konfigurasi proxy.',
   },
   {
     key: 'bot-health',
-    label: 'Bot health',
+    label: 'Kesehatan bot',
     method: 'GET',
     path: '/api/bot-health',
-    description: 'Current bot socket state and pairing readiness.',
+    description: 'Status socket bot saat ini dan kesiapan pairing.',
   },
   {
     key: 'bot-meta',
-    label: 'Bot meta',
+    label: 'Metadata bot',
     method: 'GET',
     path: '/api/bot-meta',
-    description: 'Node runtime metadata behind the proxy.',
+    description: 'Metadata runtime Node di balik proxy.',
   },
 ] as const
 
@@ -194,7 +214,7 @@ function formatUptime(seconds: number | undefined) {
   const minutes = Math.floor((seconds % 3600) / 60)
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m`
+    return `${hours}j ${minutes}m`
   }
 
   return `${minutes}m`
@@ -202,7 +222,7 @@ function formatUptime(seconds: number | undefined) {
 
 function formatClock(value: string | null | undefined) {
   if (!value) {
-    return 'pending'
+    return 'menunggu'
   }
 
   return new Date(value).toLocaleTimeString()
@@ -210,7 +230,7 @@ function formatClock(value: string | null | undefined) {
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
-    return 'not yet'
+    return 'belum ada'
   }
 
   return new Date(value).toLocaleString()
@@ -220,14 +240,14 @@ function getGreeting() {
   const hour = new Date().getHours()
 
   if (hour < 12) {
-    return 'Morning'
+    return 'Pagi'
   }
 
   if (hour < 18) {
-    return 'Afternoon'
+    return 'Siang'
   }
 
-  return 'Evening'
+  return 'Malam'
 }
 
 function getProgress(connection?: string) {
@@ -314,20 +334,20 @@ function App() {
 
   async function copyText(value: string, label: string) {
     if (!value) {
-      addActivity(`${label} is empty.`, 'error')
+      addActivity(`${label} kosong.`, 'error')
       return
     }
 
     try {
       await navigator.clipboard.writeText(value)
-      setCopyNotice(`${label} copied`)
-      addActivity(`${label} copied to clipboard.`, 'success')
+      setCopyNotice(`${label} disalin`)
+      addActivity(`${label} berhasil disalin.`, 'success')
       window.setTimeout(() => {
-        setCopyNotice((current) => (current === `${label} copied` ? null : current))
+        setCopyNotice((current) => (current === `${label} disalin` ? null : current))
       }, 2200)
     } catch {
       setCopyNotice(null)
-      addActivity(`Unable to copy ${label}.`, 'error')
+      addActivity(`Gagal menyalin ${label}.`, 'error')
     }
   }
 
@@ -350,7 +370,7 @@ function App() {
           ? String(payload.message || '')
           : ''
 
-      throw new Error(message || `${url} failed with ${response.status}`)
+      throw new Error(message || `${url} gagal dengan status ${response.status}`)
     }
 
     return payload as T
@@ -371,34 +391,34 @@ function App() {
       setStatus(statusResult.value)
       setStatusError(null)
     } else {
-      setStatusError(statusResult.reason instanceof Error ? statusResult.reason.message : 'Unable to reach live status endpoint.')
+      setStatusError(statusResult.reason instanceof Error ? statusResult.reason.message : 'Gagal menjangkau endpoint status live.')
     }
 
     if (botStatusResult.status === 'fulfilled') {
       setBotStatus(botStatusResult.value)
       setBotStatusError(null)
     } else {
-      setBotStatusError(botStatusResult.reason instanceof Error ? botStatusResult.reason.message : 'Unable to reach bot health proxy.')
+      setBotStatusError(botStatusResult.reason instanceof Error ? botStatusResult.reason.message : 'Gagal menjangkau proxy kesehatan bot.')
     }
 
     if (liveMetaResult.status === 'fulfilled') {
       setLiveMeta(liveMetaResult.value)
       setMetaError(null)
     } else {
-      setMetaError(liveMetaResult.reason instanceof Error ? liveMetaResult.reason.message : 'Unable to reach edge metadata.')
+      setMetaError(liveMetaResult.reason instanceof Error ? liveMetaResult.reason.message : 'Gagal menjangkau metadata edge.')
     }
 
     if (botMetaResult.status === 'fulfilled') {
       setBotMeta(botMetaResult.value)
       setMetaError(null)
     } else if (liveMetaResult.status !== 'rejected') {
-      setMetaError(botMetaResult.reason instanceof Error ? botMetaResult.reason.message : 'Unable to reach bot metadata.')
+      setMetaError(botMetaResult.reason instanceof Error ? botMetaResult.reason.message : 'Gagal menjangkau metadata bot.')
     }
 
     setLastSyncedAt(new Date().toISOString())
 
     if (options?.announce) {
-      addActivity('Dashboard synced from live endpoints.', 'info')
+      addActivity('Dashboard berhasil sinkron dari endpoint live.', 'info')
     }
 
     setIsRefreshing(false)
@@ -441,14 +461,14 @@ function App() {
 
     if (!previousSnapshot.current) {
       previousSnapshot.current = snapshot
-      addActivity('Dashboard connected to live bot runtime.', 'success')
+      addActivity('Dashboard berhasil terhubung ke runtime bot live.', 'success')
       return
     }
 
     if (previousSnapshot.current !== snapshot) {
       previousSnapshot.current = snapshot
       addActivity(
-        `Runtime changed to ${botStatus.connection}. Registered: ${botStatus.registered ? 'yes' : 'no'}.`,
+        `Runtime berubah ke ${botStatus.connection}. Terdaftar: ${botStatus.registered ? 'ya' : 'tidak'}.`,
         botStatus.connection === 'open' ? 'success' : 'info',
       )
     }
@@ -502,56 +522,56 @@ function App() {
   const workflowRows = [
     {
       label: 'Edge worker bundle',
-      detail: status?.domain ?? 'Waiting for route',
+      detail: status?.domain ?? 'Menunggu rute',
       percent: edgeProgress,
-      state: status?.status ?? 'Syncing',
+      state: status?.status ?? 'Menyinkronkan',
     },
     {
       label: 'Bot health proxy',
       detail: liveMeta?.botHealthProxy ?? '/api/bot-health',
       percent: botStatus ? 100 : 40,
-      state: botStatus ? 'Live' : 'Pending',
+      state: botStatus ? 'Aktif' : 'Menunggu',
     },
     {
-      label: 'Runtime socket',
+      label: 'Socket runtime',
       detail: botStatus?.connection ?? 'Booting',
       percent: runtimeProgress,
-      state: botStatus?.connection ?? 'Queueing',
+      state: botStatus?.connection ?? 'Mengantre',
     },
     {
-      label: 'Pairing surfaces',
-      detail: botStatus?.qrAvailable ? 'Code + QR ready' : 'Awaiting pair surface',
+      label: 'Permukaan pairing',
+      detail: botStatus?.qrAvailable ? 'Kode + QR siap' : 'Menunggu panel pairing',
       percent: pairingProgress,
-      state: botStatus?.registered ? 'Ready' : 'Action needed',
+      state: botStatus?.registered ? 'Siap' : 'Perlu aksi',
     },
   ]
 
   const pairingChecklist = [
     {
-      label: 'Unlock dashboard with admin key',
+      label: 'Buka dashboard dengan admin key',
       done: Boolean(adminKey),
     },
     {
-      label: 'Runtime proxy is reachable',
+      label: 'Proxy runtime bisa dijangkau',
       done: Boolean(botStatus && botStatus.connection !== 'booting'),
     },
     {
-      label: 'Generate code or load QR',
+      label: 'Generate kode atau muat QR',
       done: Boolean(pairingResult?.code || botStatus?.qrAvailable || qrImage),
     },
     {
-      label: 'WhatsApp linked',
+      label: 'WhatsApp sudah tertaut',
       done: Boolean(botStatus?.registered),
     },
   ]
 
   const runtimeFeed = [
-    `Edge route: ${status?.status ?? 'checking'}`,
+    `Route edge: ${status?.status ?? 'mengecek'}`,
     `Socket: ${botStatus?.connection ?? 'booting'}`,
-    `Registered: ${botStatus?.registered ? 'yes' : 'no'}`,
-    `QR available: ${botStatus?.qrAvailable ? 'yes' : 'no'}`,
-    `Last pairing request: ${formatClock(botStatus?.lastPairingRequestAt)}`,
-    `Last disconnect: ${botStatus?.lastDisconnectReason ?? 'none'}`,
+    `Terdaftar: ${botStatus?.registered ? 'ya' : 'tidak'}`,
+    `QR tersedia: ${botStatus?.qrAvailable ? 'ya' : 'tidak'}`,
+    `Permintaan pairing terakhir: ${formatClock(botStatus?.lastPairingRequestAt)}`,
+    `Disconnect terakhir: ${botStatus?.lastDisconnectReason ?? 'tidak ada'}`,
   ].filter((entry) => !searchNeedle || entry.toLowerCase().includes(searchNeedle))
 
   const controlLinks = [
@@ -580,7 +600,7 @@ function App() {
       (entry) => `.${entry.name}` === command,
     )?.description
 
-    return runtimeDescription || commandDescriptions[command] || 'Core command loaded in runtime.'
+    return runtimeDescription || commandDescriptions[command] || 'Perintah inti aktif di runtime.'
   }
 
   function getCommandExample(command: string) {
@@ -590,44 +610,44 @@ function App() {
   const nextAction = (() => {
     if (!adminKey) {
       return {
-        title: 'Paste the admin key first',
-        body: 'The dashboard controls stay locked until you fill the admin key in the pairing panel.',
-        primaryLabel: 'Go to Pairing Panel',
+        title: 'Tempel admin key dulu',
+        body: 'Kontrol dashboard tetap terkunci sampai admin key diisi di panel pairing.',
+        primaryLabel: 'Buka Panel Koneksi',
         primaryAction: () => jumpToSection('pairing'),
-        secondaryLabel: 'Refresh Status',
+        secondaryLabel: 'Segarkan Status',
         secondaryAction: () => void refreshAll({ announce: true }),
       }
     }
 
     if (isBotReady) {
       return {
-        title: 'Bot already connected',
-        body: 'Open WhatsApp and send .menu, .ping, or .alive to start using the bot immediately.',
-        primaryLabel: 'Copy .menu',
+        title: 'Bot sudah terhubung',
+        body: 'Buka WhatsApp lalu kirim .menu, .ping, atau .alive untuk mulai pakai bot sekarang juga.',
+        primaryLabel: 'Salin .menu',
         primaryAction: () => void copyText('.menu', '.menu starter'),
-        secondaryLabel: 'Jump to Use Bot',
+        secondaryLabel: 'Ke Bagian Pakai Bot',
         secondaryAction: () => jumpToSection('use'),
       }
     }
 
     if (botStatus?.qrAvailable) {
       return {
-        title: 'Connect WhatsApp now',
-        body: 'For the same phone, use Get Pairing Code. On laptop or desktop, use Show QR to scan from Linked Devices.',
-        primaryLabel: 'Get Pairing Code',
+        title: 'Hubungkan WhatsApp sekarang',
+        body: 'Kalau pakai HP yang sama, pakai kode pairing. Kalau buka dashboard di laptop, pakai QR lalu scan dari Linked Devices.',
+        primaryLabel: 'Ambil Kode Pairing',
         primaryAction: () => void handleGeneratePairingCode(),
-        secondaryLabel: 'Show QR',
+        secondaryLabel: 'Tampilkan QR',
         secondaryAction: () => void handleLoadQr(),
       }
     }
 
     return {
-      title: 'Repair the session first',
-      body: 'If the runtime is stuck or no QR is available yet, reset the session once and wait a few seconds for a clean reconnect.',
-      primaryLabel: 'Reset Session',
+      title: 'Perbaiki sesi dulu',
+      body: 'Kalau runtime macet atau QR belum muncul, reset sesi sekali lalu tunggu beberapa detik sampai konek ulang dengan bersih.',
+      primaryLabel: 'Reset Sesi',
       primaryAction: () => void handleResetSession(),
-      secondaryLabel: 'Refresh Status',
-      secondaryAction: () => void refreshAll({ announce: true }),
+        secondaryLabel: 'Segarkan Status',
+        secondaryAction: () => void refreshAll({ announce: true }),
     }
   })()
 
@@ -646,15 +666,15 @@ function App() {
         payload: JSON.stringify(payload, null, 2),
         tone: 'success',
       })
-      addActivity(`${label} inspected from dashboard.`, 'info')
+      addActivity(`${label} berhasil dicek dari dashboard.`, 'info')
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Endpoint inspection failed.'
+      const message = error instanceof Error ? error.message : 'Pemeriksaan endpoint gagal.'
       setInspector({
         label,
         payload: message,
         tone: 'error',
       })
-      addActivity(`${label} inspection failed.`, 'error')
+      addActivity(`${label} gagal dicek.`, 'error')
     } finally {
       setInspectingKey(null)
     }
@@ -663,12 +683,12 @@ function App() {
   async function handleGeneratePairingCode() {
     const phone = normalizePhone(pairPhone)
     if (!phone) {
-      setPairingError('Phone number is required.')
+      setPairingError('Nomor telepon wajib diisi.')
       return
     }
 
     if (!adminKey) {
-      setPairingError('Admin key is required.')
+      setPairingError('Admin key wajib diisi.')
       return
     }
 
@@ -696,11 +716,11 @@ function App() {
         payload: JSON.stringify(payload, null, 2),
         tone: 'success',
       })
-      addActivity(`Pairing code generated for ${payload.phone || phone}.`, 'success')
+      addActivity(`Kode pairing berhasil dibuat untuk ${payload.phone || phone}.`, 'success')
       await refreshAll()
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unable to generate a pairing code.'
+        error instanceof Error ? error.message : 'Gagal membuat kode pairing.'
 
       setPairingResult(null)
       setPairingError(message)
@@ -709,7 +729,7 @@ function App() {
         payload: message,
         tone: 'error',
       })
-      addActivity('Pairing code generation failed.', 'error')
+      addActivity('Pembuatan kode pairing gagal.', 'error')
     } finally {
       setIsGenerating(false)
     }
@@ -717,7 +737,7 @@ function App() {
 
   async function handleResetSession() {
     if (!adminKey) {
-      setPairingError('Admin key is required.')
+      setPairingError('Admin key wajib diisi.')
       return
     }
 
@@ -739,18 +759,18 @@ function App() {
       setPairingResult(null)
       setQrImage(null)
       setQrMeta(null)
-      setResetNotice(payload.message || 'Session cleared. Wait a few seconds, then try again.')
+      setResetNotice(payload.message || 'Sesi dibersihkan. Tunggu beberapa detik lalu coba lagi.')
       setInspector({
         label: 'POST /api/bot-reset',
         payload: JSON.stringify(payload, null, 2),
         tone: 'success',
       })
-      addActivity('Bot session reset from dashboard.', 'success')
+      addActivity('Sesi bot berhasil di-reset dari dashboard.', 'success')
       window.setTimeout(() => {
         void refreshAll({ announce: true })
       }, 3500)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to reset bot session.'
+      const message = error instanceof Error ? error.message : 'Gagal mereset sesi bot.'
 
       setResetNotice(null)
       setPairingError(message)
@@ -759,7 +779,7 @@ function App() {
         payload: message,
         tone: 'error',
       })
-      addActivity('Bot session reset failed.', 'error')
+      addActivity('Reset sesi bot gagal.', 'error')
     } finally {
       setIsResetting(false)
     }
@@ -767,7 +787,7 @@ function App() {
 
   async function handleLoadQr() {
     if (!adminKey) {
-      setQrError('Admin key is required.')
+      setQrError('Admin key wajib diisi.')
       return
     }
 
@@ -789,7 +809,7 @@ function App() {
       })
 
       if (!payload.qr) {
-        throw new Error(payload.message || 'QR is not available yet.')
+        throw new Error(payload.message || 'QR belum tersedia.')
       }
 
       const image = await QRCode.toDataURL(payload.qr, {
@@ -808,10 +828,10 @@ function App() {
         payload: JSON.stringify(payload, null, 2),
         tone: 'success',
       })
-      addActivity('Desktop QR loaded from dashboard.', 'success')
+      addActivity('QR desktop berhasil dimuat dari dashboard.', 'success')
       await refreshAll()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to load QR.'
+      const message = error instanceof Error ? error.message : 'Gagal memuat QR.'
 
       setQrImage(null)
       setQrMeta(null)
@@ -821,7 +841,7 @@ function App() {
         payload: message,
         tone: 'error',
       })
-      addActivity('Desktop QR load failed.', 'error')
+      addActivity('Pemuatan QR desktop gagal.', 'error')
     } finally {
       setIsLoadingQr(false)
     }
@@ -833,8 +853,8 @@ function App() {
       : resetNotice
         ? resetNotice
       : pairingResult?.code
-        ? `Use code ${pairingResult.code} immediately in WhatsApp Linked Devices.`
-        : 'Use Generate Pairing Code for phone-number linking, or Load QR if desktop scan is easier.'
+        ? `Masukkan kode ${pairingResult.code} sekarang juga di menu Linked Devices WhatsApp.`
+        : 'Pakai tombol kode pairing untuk link via nomor, atau pakai QR kalau scan dari desktop lebih gampang.'
 
   return (
     <div className="dashboard-shell">
@@ -869,10 +889,10 @@ function App() {
           <header className="topbar reveal reveal-delay-1">
             <div>
               <p className="topbar-label">Dashboard</p>
-              <h1>Mybeebot Tools</h1>
+              <h1>Kontrol Mybeebot</h1>
               <p className="search-meta">
-                {totalMatches} live matches
-                {lastSyncedAt ? ` • synced ${formatClock(lastSyncedAt)}` : ''}
+                {totalMatches} hasil live
+                {lastSyncedAt ? ` • sinkron ${formatClock(lastSyncedAt)}` : ''}
                 {copyNotice ? ` • ${copyNotice}` : ''}
               </p>
             </div>
@@ -884,7 +904,7 @@ function App() {
                 type="text"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search command, endpoint, runtime state"
+                placeholder="Cari perintah, endpoint, atau status runtime"
               />
               <button
                 type="button"
@@ -892,7 +912,7 @@ function App() {
                 onClick={() => void refreshAll({ announce: true })}
                 disabled={isRefreshing}
               >
-                {isRefreshing ? 'Syncing...' : 'Refresh'}
+                {isRefreshing ? 'Sinkron...' : 'Refresh'}
               </button>
             </div>
           </header>
@@ -901,26 +921,26 @@ function App() {
             <main className="main-column">
               <article id="section-overview" className="panel hero-panel reveal reveal-delay-2">
                 <div className="hero-copy">
-                  <p className="eyebrow">Good {greeting},</p>
-                  <h2>Mybeebot Control</h2>
+                  <p className="eyebrow">Selamat {greeting},</p>
+                  <h2>Kontrol Penuh Mybeebot</h2>
                   <p className="hero-text">
-                    Live dashboard for pairing, QR fallback, command lookup, endpoint
-                    inspection, and runtime monitoring from the same Cloudflare domain.
+                    Dashboard live untuk pairing, fallback QR, pencarian perintah, inspeksi
+                    endpoint, dan monitoring runtime dari domain Cloudflare yang sama.
                   </p>
                 </div>
 
                 <div className="hero-stat-bar">
                   <div>
-                    <span className="muted-label">Launch score</span>
+                    <span className="muted-label">Skor kesiapan</span>
                     <strong>{overallReadiness}%</strong>
                   </div>
                   <div className="hero-chip-row">
-                    <span className="hero-chip">{status?.status ?? 'syncing edge'}</span>
+                    <span className="hero-chip">{status?.status ?? 'sinkron edge'}</span>
                     <span className="hero-chip">
-                      {botStatus?.registered ? 'device paired' : 'pairing pending'}
+                      {botStatus?.registered ? 'perangkat tertaut' : 'menunggu pairing'}
                     </span>
                     <span className="hero-chip">
-                      {botStatus?.qrAvailable ? 'qr ready' : 'qr waiting'}
+                      {botStatus?.qrAvailable ? 'qr siap' : 'menunggu qr'}
                     </span>
                   </div>
                 </div>
@@ -931,28 +951,28 @@ function App() {
 
                 <div className="hero-metrics">
                   <div className="metric-card large">
-                    <span>Loaded modules</span>
+                    <span>Module aktif</span>
                     <strong>{botStatus?.commandCount ?? activeCommands.length}</strong>
-                    <small>runtime command deck</small>
+                    <small>daftar perintah runtime</small>
                   </div>
 
                   <div className="metric-card">
                     <span>Runtime</span>
                     <strong>{botStatus?.connection ?? 'booting'}</strong>
-                    <small>{formatUptime(botStatus?.uptimeSeconds)} uptime</small>
+                    <small>uptime {formatUptime(botStatus?.uptimeSeconds)}</small>
                   </div>
 
                   <div className="metric-card">
                     <span>Domain</span>
-                    <strong>Live</strong>
-                    <small>{status?.domain ?? 'attaching route'}</small>
+                    <strong>Aktif</strong>
+                    <small>{status?.domain ?? 'menempelkan rute'}</small>
                   </div>
                 </div>
               </article>
 
               <article className="panel guide-panel reveal reveal-delay-2">
                 <div className="guide-copy">
-                  <p className="tiny-label">Start Here</p>
+                  <p className="tiny-label">Mulai Dari Sini</p>
                   <h3>{nextAction.title}</h3>
                   <p>{nextAction.body}</p>
                 </div>
@@ -980,27 +1000,27 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open WhatsApp Web
+                    Buka WhatsApp Web
                   </a>
                 </div>
 
                 <div className="guide-grid">
                   <article className="guide-card">
-                    <span>1. Unlock</span>
-                    <strong>Paste admin key</strong>
-                    <p>Fill the admin key once. The dashboard saves it in your browser.</p>
+                    <span>1. Buka Akses</span>
+                    <strong>Isi admin key</strong>
+                    <p>Isi admin key sekali. Dashboard akan menyimpannya di browser Anda.</p>
                   </article>
 
                   <article className="guide-card">
-                    <span>2. Connect</span>
-                    <strong>Code or QR</strong>
-                    <p>Use code for phone-number linking, or use QR when scanning from desktop is easier.</p>
+                    <span>2. Sambungkan</span>
+                    <strong>Kode atau QR</strong>
+                    <p>Pakai kode untuk link via nomor, atau QR kalau scan dari desktop lebih gampang.</p>
                   </article>
 
                   <article className="guide-card">
-                    <span>3. Use bot</span>
-                    <strong>Send a starter command</strong>
-                    <p>After linked, copy `.menu`, open WhatsApp, and send it to your own chat or any allowed chat.</p>
+                    <span>3. Pakai Bot</span>
+                    <strong>Kirim perintah awal</strong>
+                    <p>Setelah tertaut, salin `.menu`, buka WhatsApp, lalu kirim ke chat sendiri atau chat yang diizinkan.</p>
                   </article>
                 </div>
               </article>
@@ -1009,10 +1029,10 @@ function App() {
                 <article className="panel queue-panel reveal reveal-delay-3">
                   <div className="panel-head">
                     <div>
-                      <p className="tiny-label">Runtime queue</p>
-                      <h3>Deployment flow</h3>
+                      <p className="tiny-label">Antrian runtime</p>
+                      <h3>Alur deploy</h3>
                     </div>
-                    <span className="soft-pill">{overallReadiness}% synced</span>
+                    <span className="soft-pill">{overallReadiness}% sinkron</span>
                   </div>
 
                   <div className="workflow-list">
@@ -1040,21 +1060,21 @@ function App() {
                 >
                   <div className="panel-head">
                     <div>
-                      <p className="tiny-label">Pair device</p>
-                      <h3>Website pairing panel</h3>
+                      <p className="tiny-label">Hubungkan perangkat</p>
+                      <h3>Panel koneksi website</h3>
                     </div>
                     <button
                       type="button"
                       className="ghost-action"
-                      onClick={() => void copyText(normalizePhone(pairPhone), 'Normalized phone')}
+                      onClick={() => void copyText(normalizePhone(pairPhone), 'Nomor ternormalisasi')}
                     >
-                      Copy phone
+                      Salin nomor
                     </button>
                   </div>
 
                   <div className="pairing-form">
                     <label className="field-block">
-                      <span>WhatsApp number</span>
+                      <span>Nomor WhatsApp</span>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1070,7 +1090,7 @@ function App() {
                         type="password"
                         value={adminKey}
                         onChange={(event) => setAdminKey(event.target.value)}
-                        placeholder="Enter dashboard admin key"
+                        placeholder="Masukkan admin key dashboard"
                       />
                     </label>
 
@@ -1081,7 +1101,7 @@ function App() {
                         onClick={handleGeneratePairingCode}
                         disabled={isGenerating || isResetting || isLoadingQr}
                       >
-                        {isGenerating ? 'Generating...' : 'Get Pairing Code'}
+                        {isGenerating ? 'Membuat...' : 'Ambil Kode Pairing'}
                       </button>
 
                       <button
@@ -1090,7 +1110,7 @@ function App() {
                         onClick={handleResetSession}
                         disabled={isGenerating || isResetting || isLoadingQr}
                       >
-                        {isResetting ? 'Resetting...' : 'Reset Session'}
+                        {isResetting ? 'Mereset...' : 'Reset Sesi'}
                       </button>
 
                       <button
@@ -1099,13 +1119,13 @@ function App() {
                         onClick={handleLoadQr}
                         disabled={isGenerating || isResetting || isLoadingQr}
                       >
-                        {isLoadingQr ? 'Loading QR...' : 'Show QR to Scan'}
+                        {isLoadingQr ? 'Memuat QR...' : 'Tampilkan QR untuk Scan'}
                       </button>
                     </div>
                   </div>
 
                   <div className="pairing-command">
-                    <span>Phone format</span>
+                    <span>Format nomor</span>
                     <code>{normalizedPhone || '62xxxxxxxxxxx'}</code>
                   </div>
 
@@ -1124,34 +1144,34 @@ function App() {
                     </div>
                     <div className="mini-stat">
                       <span>Device</span>
-                      <strong>{botStatus?.registered ? 'Linked' : 'Pending'}</strong>
+                      <strong>{botStatus?.registered ? 'Tertaut' : 'Menunggu'}</strong>
                     </div>
                   </div>
 
                   <div className="pairing-result">
                     <div className="result-head">
-                      <span>Latest code</span>
+                      <span>Kode terbaru</span>
                       {pairingResult?.code ? (
                         <button
                           type="button"
                           className="ghost-action"
-                          onClick={() => void copyText(pairingResult.code || '', 'Pairing code')}
+                          onClick={() => void copyText(pairingResult.code || '', 'Kode pairing')}
                         >
-                          Copy code
+                          Salin kode
                         </button>
                       ) : null}
                     </div>
                     <strong>{pairingResult?.code ?? '--------'}</strong>
                     <small>
                       {pairingResult?.requestedAt
-                        ? `Generated ${formatDateTime(pairingResult.requestedAt)}`
-                        : 'Generate a fresh code, then enter it in WhatsApp Linked Devices.'}
+                        ? `Dibuat ${formatDateTime(pairingResult.requestedAt)}`
+                        : 'Buat kode baru, lalu masukkan ke menu Linked Devices WhatsApp.'}
                     </small>
                   </div>
 
                   <div className="qr-result">
                     <div className="result-head">
-                      <span>Desktop QR fallback</span>
+                      <span>QR cadangan desktop</span>
                       {qrImage ? (
                         <button
                           type="button"
@@ -1159,7 +1179,7 @@ function App() {
                           onClick={handleLoadQr}
                           disabled={isLoadingQr}
                         >
-                          Refresh QR
+                          Muat ulang QR
                         </button>
                       ) : null}
                     </div>
@@ -1170,14 +1190,14 @@ function App() {
                         </div>
                         <small>
                           {qrMeta?.generatedAt
-                            ? `QR updated ${formatDateTime(qrMeta.generatedAt)}`
-                            : 'Open this dashboard on a laptop, then scan from Linked Devices on your phone.'}
+                            ? `QR diperbarui ${formatDateTime(qrMeta.generatedAt)}`
+                            : 'Buka dashboard ini di laptop, lalu scan dari menu Linked Devices di HP Anda.'}
                         </small>
                       </>
                     ) : (
                       <small>
                         {qrError ||
-                          'If phone-number pairing keeps failing, open this dashboard on desktop and load the QR.'}
+                          'Kalau pairing via nomor terus gagal, buka dashboard ini di desktop lalu muat QR.'}
                       </small>
                     )}
                   </div>
@@ -1198,42 +1218,42 @@ function App() {
               <article id="section-use" className="panel use-panel reveal reveal-delay-4">
                 <div className="panel-head">
                   <div>
-                    <p className="tiny-label">Use Bot</p>
-                    <h3>What to do after linking</h3>
+                    <p className="tiny-label">Pakai Bot</p>
+                    <h3>Apa yang dilakukan setelah tertaut</h3>
                   </div>
                   <button
                     type="button"
                     className="ghost-action"
                     onClick={() => void refreshAll({ announce: true })}
                   >
-                    Check live status
+                    Cek status live
                   </button>
                 </div>
 
                 <div className="use-grid">
                   <div className="use-card highlight">
-                    <span>Current state</span>
-                    <strong>{isBotReady ? 'Ready to use' : isLinked ? 'Linked, waiting for socket' : 'Not linked yet'}</strong>
+                    <span>Status sekarang</span>
+                    <strong>{isBotReady ? 'Siap dipakai' : isLinked ? 'Sudah tertaut, menunggu socket' : 'Belum tertaut'}</strong>
                     <p>
                       {isBotReady
-                        ? 'Open WhatsApp now and send one of the starter commands below.'
+                        ? 'Buka WhatsApp sekarang lalu kirim salah satu perintah awal di bawah.'
                         : isLinked
-                          ? 'The device is linked, but the socket has not fully opened yet. Wait a moment and refresh.'
-                          : 'Connect the device first from the pairing panel, then come back here to use the bot.'}
+                          ? 'Perangkat sudah tertaut, tapi socket belum terbuka penuh. Tunggu sebentar lalu refresh.'
+                          : 'Hubungkan perangkat dulu dari panel pairing, lalu balik ke sini untuk memakai bot.'}
                     </p>
                   </div>
 
                   <div className="use-card">
-                    <span>Open chat</span>
-                    <strong>Use your own WhatsApp</strong>
-                    <p>After linked, send commands from your own chat, message yourself, or any chat allowed by bot mode.</p>
+                    <span>Buka chat</span>
+                    <strong>Pakai WhatsApp Anda sendiri</strong>
+                    <p>Setelah tertaut, kirim perintah dari chat sendiri, chat ke diri sendiri, atau chat lain yang diizinkan mode bot.</p>
                     <a
                       className="use-link"
-                      href="https://web.whatsapp.com/"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open WhatsApp Web
+                    href="https://web.whatsapp.com/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                      Buka WhatsApp Web
                     </a>
                   </div>
                 </div>
@@ -1242,7 +1262,7 @@ function App() {
                   {starterCommands.map((command) => (
                     <article key={command} className="starter-card">
                       <strong>{command}</strong>
-                      <p>{commandDescriptions[command] ?? 'Starter command.'}</p>
+                      <p>{commandDescriptions[command] ?? 'Perintah awal.'}</p>
                       <button
                         type="button"
                         className="command-action"
@@ -1250,7 +1270,7 @@ function App() {
                           void copyText(commandExamples[command] ?? command, `${command} starter`)
                         }
                       >
-                        Copy command
+                        Salin perintah
                       </button>
                     </article>
                   ))}
@@ -1258,16 +1278,16 @@ function App() {
 
                 <div className="usage-steps">
                   <div className="usage-step">
-                    <span>Step 1</span>
-                    <p>Link the device from the pairing panel.</p>
+                    <span>Langkah 1</span>
+                    <p>Link perangkat dari panel pairing.</p>
                   </div>
                   <div className="usage-step">
-                    <span>Step 2</span>
-                    <p>Wait until `Registered: yes` and ideally `Runtime: open`.</p>
+                    <span>Langkah 2</span>
+                    <p>Tunggu sampai status registered aktif dan idealnya runtime sudah `open`.</p>
                   </div>
                   <div className="usage-step">
-                    <span>Step 3</span>
-                    <p>Copy `.menu` or `.ping`, open WhatsApp, then send it.</p>
+                    <span>Langkah 3</span>
+                    <p>Salin `.menu` atau `.ping`, buka WhatsApp, lalu kirim.</p>
                   </div>
                 </div>
               </article>
@@ -1278,8 +1298,8 @@ function App() {
               >
                 <div className="panel-head">
                   <div>
-                    <p className="tiny-label">Command matrix</p>
-                    <h3>Loaded command deck</h3>
+                    <p className="tiny-label">Matriks perintah</p>
+                    <h3>Daftar perintah aktif</h3>
                   </div>
                   <a
                     className="ghost-link"
@@ -1287,7 +1307,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    open repo
+                    buka repo
                   </a>
                 </div>
 
@@ -1303,11 +1323,11 @@ function App() {
                             onClick={() =>
                               void copyText(
                                 getCommandExample(command),
-                                `${command} example`,
+                                `Contoh ${command}`,
                               )
                             }
                           >
-                            copy
+                            salin
                           </button>
                         </div>
                         <p>{getCommandDescription(command)}</p>
@@ -1316,7 +1336,7 @@ function App() {
                     ))
                   ) : (
                     <div className="empty-state">
-                      No command matches <strong>{searchQuery}</strong>.
+                      Tidak ada perintah yang cocok dengan <strong>{searchQuery}</strong>.
                     </div>
                   )}
                 </div>
@@ -1325,8 +1345,8 @@ function App() {
               <article id="section-api" className="panel api-panel reveal reveal-delay-4">
                 <div className="panel-head">
                   <div>
-                    <p className="tiny-label">API explorer</p>
-                    <h3>Inspect live endpoints</h3>
+                    <p className="tiny-label">Penjelajah API</p>
+                    <h3>Cek endpoint live</h3>
                   </div>
                   <button
                     type="button"
@@ -1340,7 +1360,7 @@ function App() {
                     })}
                     disabled={!adminKey || inspectingKey === 'bot-qr'}
                   >
-                    {inspectingKey === 'bot-qr' ? 'Inspecting...' : 'Inspect QR'}
+                    {inspectingKey === 'bot-qr' ? 'Memeriksa...' : 'Cek QR'}
                   </button>
                 </div>
 
@@ -1367,78 +1387,78 @@ function App() {
                             }
                             disabled={inspectingKey === endpoint.key}
                           >
-                            {inspectingKey === endpoint.key ? 'Testing...' : 'Test'}
+                            {inspectingKey === endpoint.key ? 'Mengetes...' : 'Tes'}
                           </button>
                           <button
                             type="button"
                             className="command-action secondary"
                             onClick={() => void copyText(endpoint.path, `${endpoint.path} path`)}
                           >
-                            copy path
+                            salin path
                           </button>
                         </div>
                       </article>
                     ))
                   ) : (
                     <div className="empty-state">
-                      No endpoint matches <strong>{searchQuery}</strong>.
+                      Tidak ada endpoint yang cocok dengan <strong>{searchQuery}</strong>.
                     </div>
                   )}
                 </div>
 
                 <div className={`json-panel${inspector?.tone === 'error' ? ' error' : ''}`}>
                   <div className="result-head">
-                    <span>{inspector?.label ?? 'Latest endpoint response'}</span>
+                    <span>{inspector?.label ?? 'Respons endpoint terbaru'}</span>
                     {inspector ? (
                       <button
                         type="button"
                         className="ghost-action"
-                        onClick={() => void copyText(inspector.payload, 'Inspector payload')}
+                        onClick={() => void copyText(inspector.payload, 'Payload inspector')}
                       >
-                        Copy JSON
+                        Salin JSON
                       </button>
                     ) : null}
                   </div>
-                  <pre>{inspector?.payload ?? 'Run Test on any endpoint to inspect the live JSON response here.'}</pre>
+                  <pre>{inspector?.payload ?? 'Jalankan tes di salah satu endpoint untuk melihat respons JSON live di sini.'}</pre>
                 </div>
               </article>
             </main>
 
             <aside className="side-column">
               <article className="panel side-card accent reveal reveal-delay-2">
-                <p className="tiny-label">Workspace score</p>
+                <p className="tiny-label">Skor workspace</p>
                 <strong className="score-number">{overallReadiness}</strong>
-                <span className="score-unit">percent ready</span>
+                <span className="score-unit">persen siap</span>
                 <div className="score-track">
                   <span style={{ width: `${overallReadiness}%` }} />
                 </div>
               </article>
 
               <article className="panel side-card reveal reveal-delay-3">
-                <p className="tiny-label">Edge surface</p>
-                <h3>Live route</h3>
+                <p className="tiny-label">Permukaan edge</p>
+                <h3>Route live</h3>
                 <ul className="detail-list">
-                  <li>{status?.domain ?? 'waiting for domain'}</li>
-                  <li>{status?.runtime ?? 'Worker static assets'}</li>
-                  <li>{lastSyncedAt ? `Synced ${formatDateTime(lastSyncedAt)}` : 'Waiting for edge ping'}</li>
+                  <li>{status?.domain ?? 'menunggu domain'}</li>
+                  <li>{status?.runtime ?? 'Aset statis worker'}</li>
+                  <li>{lastSyncedAt ? `Sinkron ${formatDateTime(lastSyncedAt)}` : 'Menunggu ping edge'}</li>
                 </ul>
               </article>
 
               <article className="panel side-card reveal reveal-delay-4">
-                <p className="tiny-label">Runtime feed</p>
-                <h3>System notes</h3>
+                <p className="tiny-label">Feed runtime</p>
+                <h3>Catatan sistem</h3>
                 <ul className="feed-list">
                   {runtimeFeed.length ? (
                     runtimeFeed.map((entry) => <li key={entry}>{entry}</li>)
                   ) : (
-                    <li>No runtime note matches the current search.</li>
+                    <li>Tidak ada catatan runtime yang cocok dengan pencarian saat ini.</li>
                   )}
                 </ul>
               </article>
 
               <article className="panel side-card reveal reveal-delay-4">
-                <p className="tiny-label">Direct links</p>
-                <h3>Control paths</h3>
+                <p className="tiny-label">Link langsung</p>
+                <h3>Jalur kontrol</h3>
                 {controlLinks.length ? (
                   controlLinks.map((link) => (
                     <div key={link.href} className="endpoint-row">
@@ -1451,12 +1471,12 @@ function App() {
                         className="endpoint-copy"
                         onClick={() => void copyText(link.href, `${link.label} link`)}
                       >
-                        copy
+                        salin
                       </button>
                     </div>
                   ))
                 ) : (
-                  <div className="empty-state compact">No link matches the current search.</div>
+                  <div className="empty-state compact">Tidak ada link yang cocok dengan pencarian saat ini.</div>
                 )}
               </article>
 
@@ -1464,8 +1484,8 @@ function App() {
                 id="section-activity"
                 className="panel side-card reveal reveal-delay-4 activity-panel"
               >
-                <p className="tiny-label">Activity log</p>
-                <h3>Recent actions</h3>
+                <p className="tiny-label">Log aktivitas</p>
+                <h3>Aksi terbaru</h3>
                 <div className="activity-list">
                   {activity.length ? (
                     activity.map((entry) => (
@@ -1476,7 +1496,7 @@ function App() {
                     ))
                   ) : (
                     <div className="empty-state compact">
-                      No dashboard action yet. Try Refresh, Test endpoint, Generate Code, Load QR, or copy a command.
+                      Belum ada aksi dashboard. Coba Refresh, tes endpoint, buat kode, muat QR, atau salin perintah.
                     </div>
                   )}
                 </div>
@@ -1489,14 +1509,14 @@ function App() {
                 <div>
                   <strong>
                     {statusError || botStatusError || metaError
-                      ? 'Live surface needs attention'
-                      : 'Live proxy online'}
+                      ? 'Permukaan live perlu perhatian'
+                      : 'Proxy live online'}
                   </strong>
                   <p>
                     {statusError || botStatusError || metaError
                       ? statusError || botStatusError || metaError
                       : liveMeta?.note ||
-                        'Cloudflare edge and runtime proxy are responding from the same domain.'}
+                        'Cloudflare edge dan proxy runtime merespons dari domain yang sama.'}
                   </p>
                 </div>
               </article>

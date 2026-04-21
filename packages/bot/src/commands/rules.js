@@ -2,17 +2,17 @@ export default {
   name: 'rules',
   aliases: ['rule'],
   category: 'info',
-  description: 'Show the bot usage rules.',
+  description: 'Tampilkan aturan penggunaan bot.',
   async execute({ config, reply }) {
     await reply(
       [
-        `*${config.botName} rules*`,
+        `*Aturan ${config.botName}*`,
         '',
-        `1. Use commands with prefix ${config.prefix}`,
-        '2. Do not spam the bot repeatedly',
-        '3. Respect the owner and group admins',
-        '4. Use group tools only when needed',
-        '5. If the bot stops responding, reconnect from the dashboard',
+        `1. Gunakan command dengan prefix ${config.prefix}`,
+        '2. Jangan spam bot berulang-ulang',
+        '3. Hormati owner dan admin grup',
+        '4. Pakai tools grup hanya saat perlu',
+        '5. Kalau bot berhenti merespons, sambungkan ulang dari dashboard',
       ].join('\n'),
     )
   },

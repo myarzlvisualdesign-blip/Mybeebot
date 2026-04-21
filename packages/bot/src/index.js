@@ -8,13 +8,20 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
+import { generateAiReply, aiIsConfigured } from './lib/ai-client.js'
 import { config } from './config.js'
 import { CommandRegistry } from './lib/command-registry.js'
-import { toMention } from './lib/group-utils.js'
+import {
+  getChatJid,
+  getSenderJid,
+  normalizeJid,
+  toMention,
+} from './lib/group-utils.js'
 import { startHealthServer } from './lib/health-server.js'
 import { logger } from './lib/logger.js'
 import { cleanNumber, extractText, isOwner } from './lib/message-utils.js'
 import { GroupSettingsStore } from './lib/settings-store.js'
+import { renderWelcomeCard } from './lib/welcome-card.js'
 
 const registry = new CommandRegistry()
 const groupSettings = new GroupSettingsStore(new URL('../data/group-settings.json', import.meta.url))
@@ -34,37 +41,98 @@ const runtime = {
   sock: null,
 }
 
+function extractContextInfo(payload) {
+  if (!payload) {
+    return null
+  }
+
+  if (payload.message) {
+    return extractContextInfo(payload.message)
+  }
+
+  if (payload.ephemeralMessage?.message) {
+    return extractContextInfo(payload.ephemeralMessage.message)
+  }
+
+  if (payload.viewOnceMessage?.message) {
+    return extractContextInfo(payload.viewOnceMessage.message)
+  }
+
+  return (
+    payload.extendedTextMessage?.contextInfo ||
+    payload.imageMessage?.contextInfo ||
+    payload.videoMessage?.contextInfo ||
+    payload.documentMessage?.contextInfo ||
+    null
+  )
+}
+
+function containsLink(text) {
+  return /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|t\.me\/|instagram\.com\/|youtu(?:\.be|be\.com)\/)/i.test(
+    text,
+  )
+}
+
+function shouldTriggerAutoAi(message, body, sock) {
+  const chatJid = getChatJid(message)
+  if (!chatJid.endsWith('@g.us')) {
+    return false
+  }
+
+  const contextInfo = extractContextInfo(message)
+  const mentioned = contextInfo?.mentionedJid || []
+  if (mentioned.some((jid) => normalizeJid(jid) === normalizeJid(sock.user?.id))) {
+    return true
+  }
+
+  const lowered = body.toLowerCase()
+  const botName = config.botName.toLowerCase()
+  return (
+    lowered.startsWith(`${botName} `) ||
+    lowered.startsWith(`${botName},`) ||
+    lowered.startsWith('bot ') ||
+    lowered.startsWith('bot,')
+  )
+}
+
+function buildAiPrompt(body) {
+  return body
+    .replace(new RegExp(`^${config.botName}\\s*[:,-]?\\s*`, 'i'), '')
+    .replace(/^bot\s*[:,-]?\s*/i, '')
+    .trim()
+}
+
 async function ensurePairingCode(sock) {
   if (!config.usePairingCode || sock.authState.creds.registered) {
     return
   }
 
-  let phoneNumber = cleanNumber(config.pairingNumber)
+  const phoneNumber = cleanNumber(config.pairingNumber)
   if (!phoneNumber) {
     logger.warn(
-      `No PAIRING_NUMBER configured. Request one locally at http://127.0.0.1:${config.healthPort}/pairing?phone=628...`,
+      `PAIRING_NUMBER belum diisi. Minta kode lokal lewat http://127.0.0.1:${config.healthPort}/pairing?phone=628...`,
     )
     return
   }
 
   const pairingCode = await requestPairingCode(phoneNumber)
-  logger.success(`Pairing code: ${pairingCode}`)
+  logger.success(`Kode pairing: ${pairingCode}`)
 }
 
 async function requestPairingCode(phoneNumber) {
   const sock = runtime.sock
   if (!sock) {
-    throw new Error('Socket is not ready yet.')
+    throw new Error('Socket belum siap.')
   }
 
   const sanitized = cleanNumber(phoneNumber || config.pairingNumber)
   if (!sanitized) {
-    throw new Error('Phone number is required.')
+    throw new Error('Nomor telepon wajib diisi.')
   }
 
   if (sock.authState.creds.registered) {
     runtime.registered = true
-    return 'already-registered'
+    return 'sudah-terdaftar'
   }
 
   const pairingCode = await sock.requestPairingCode(sanitized)
@@ -90,7 +158,7 @@ async function clearSessionFiles() {
 function scheduleRestart(message, reason) {
   if (runtime.resetScheduled) {
     return {
-      message: 'Reset already scheduled.',
+      message: 'Reset sudah dijadwalkan.',
       restartScheduled: true,
       clearedSession: true,
     }
@@ -115,7 +183,7 @@ function scheduleRestart(message, reason) {
   }, 300)
 
   return {
-    message: 'Session cleared. Bot restart scheduled.',
+    message: 'Sesi dihapus. Bot akan restart sebentar lagi.',
     restartScheduled: true,
     clearedSession: true,
   }
@@ -124,15 +192,15 @@ function scheduleRestart(message, reason) {
 async function resetSession() {
   await clearSessionFiles()
 
-  return scheduleRestart('Session reset requested. Restarting bot process...', 'manual-reset')
+  return scheduleRestart('Reset sesi diminta. Bot sedang restart...', 'manual-reset')
 }
 
 async function handleGroupParticipantsUpdate(sock, event) {
   const settings = groupSettings.get(event.id)
-  if (
-    (event.action !== 'add' || !settings.welcome) &&
-    (event.action !== 'remove' || !settings.goodbye)
-  ) {
+  const shouldWelcome = event.action === 'add' && settings.welcome
+  const shouldGoodbye = event.action === 'remove' && settings.goodbye
+
+  if (!shouldWelcome && !shouldGoodbye) {
     return
   }
 
@@ -140,24 +208,135 @@ async function handleGroupParticipantsUpdate(sock, event) {
     const metadata = await sock.groupMetadata(event.id)
     const mentions = event.participants || []
     const names = mentions.map((jid) => toMention(jid)).join(', ')
-    const subject = metadata.subject || 'this group'
+    const subject = metadata.subject || 'Grup WhatsApp'
+    const lead = mentions[0] || ''
+    const avatarUrl =
+      mentions.length === 1
+        ? await sock.profilePictureUrl(lead, 'image').catch(() => null)
+        : null
 
-    if (event.action === 'add' && settings.welcome) {
-      await sock.sendMessage(event.id, {
-        text: [`Welcome ${names}`, '', `Glad to have you in *${subject}*.`].join('\n'),
-        mentions,
-      })
-    }
+    const card = await renderWelcomeCard({
+      avatarUrl,
+      handle: mentions.length === 1 ? toMention(lead) : `${mentions.length} anggota`,
+      kind: shouldWelcome ? 'welcome' : 'goodbye',
+      subject,
+      title: shouldWelcome
+        ? mentions.length === 1
+          ? 'Masuk dan langsung siap ngobrol'
+          : `${mentions.length} anggota baru bergabung`
+        : mentions.length === 1
+          ? 'Terima kasih sudah pernah mampir'
+          : `${mentions.length} anggota keluar`,
+    })
 
-    if (event.action === 'remove' && settings.goodbye) {
-      await sock.sendMessage(event.id, {
-        text: [`Goodbye ${names}`, '', `You have left *${subject}*.`].join('\n'),
-        mentions,
-      })
-    }
+    await sock.sendMessage(event.id, {
+      image: card,
+      caption: shouldWelcome
+        ? `Halo ${names}\nSelamat datang di *${subject}*.`
+        : `Sampai jumpa ${names}\nTerima kasih sudah pernah jadi bagian dari *${subject}*.`,
+      mentions,
+    })
   } catch (error) {
-    logger.warn(`Group participant update hook failed: ${error.message}`)
+    logger.warn(`Hook peserta grup gagal: ${error.message}`)
   }
+}
+
+async function getParticipantState(sock, chatJid, sender) {
+  const metadata = await sock.groupMetadata(chatJid)
+  const participants = metadata.participants || []
+  const member = participants.find((entry) => normalizeJid(entry.id) === normalizeJid(sender))
+  const botMember = participants.find(
+    (entry) => normalizeJid(entry.id) === normalizeJid(sock.user?.id),
+  )
+
+  return {
+    metadata,
+    senderAdmin: Boolean(member?.admin),
+    botAdmin: Boolean(botMember?.admin),
+  }
+}
+
+async function handleAntiLink({ body, message, owner, reply, sock }) {
+  const chatJid = getChatJid(message)
+  if (!chatJid.endsWith('@g.us')) {
+    return false
+  }
+
+  const settings = groupSettings.get(chatJid)
+  if (settings.antiLink === 'off' || !containsLink(body)) {
+    return false
+  }
+
+  const sender = getSenderJid(message)
+  const { senderAdmin, botAdmin } = await getParticipantState(sock, chatJid, sender)
+
+  if (owner || senderAdmin) {
+    return false
+  }
+
+  if (settings.antiLink === 'kick' && botAdmin) {
+    await sock.groupParticipantsUpdate(chatJid, [sender], 'remove')
+    await reply(`Link terdeteksi. ${toMention(sender)} dikeluarkan karena anti-link aktif.`)
+    return true
+  }
+
+  await reply(
+    `Link terdeteksi dari ${toMention(sender)}. Anti-link aktif di grup ini${botAdmin ? '.' : ', tapi bot belum jadi admin jadi hanya bisa kasih peringatan.'}`,
+  )
+  return true
+}
+
+async function handleAutoResponder({ body, message, reply }) {
+  const chatJid = getChatJid(message)
+  if (!chatJid.endsWith('@g.us')) {
+    return false
+  }
+
+  const settings = groupSettings.get(chatJid)
+  if (!settings.autoResponder) {
+    return false
+  }
+
+  const normalized = body.trim().toLowerCase()
+  const matched = settings.autoReplies[normalized]
+  if (!matched) {
+    return false
+  }
+
+  await reply(matched)
+  return true
+}
+
+async function handleAutoAi({ body, message, reply, sock }) {
+  const chatJid = getChatJid(message)
+  if (!chatJid.endsWith('@g.us')) {
+    return false
+  }
+
+  const settings = groupSettings.get(chatJid)
+  if (!settings.aiReply || !aiIsConfigured(config) || !shouldTriggerAutoAi(message, body, sock)) {
+    return false
+  }
+
+  const prompt = buildAiPrompt(body)
+  if (!prompt || prompt.length < 3) {
+    return false
+  }
+
+  const metadata = await sock.groupMetadata(chatJid).catch(() => null)
+  const sender = getSenderJid(message)
+  const result = await generateAiReply({
+    config,
+    prompt,
+    context: [
+      `Grup: ${metadata?.subject || chatJid}`,
+      `Pengirim: ${toMention(sender)}`,
+      `Balas dalam bahasa Indonesia.`,
+    ].join('\n'),
+  })
+
+  await reply(result)
+  return true
 }
 
 async function boot() {
@@ -199,7 +378,7 @@ async function boot() {
 
     if (connection === 'connecting') {
       state.connection = 'connecting'
-      logger.info('Connecting to WhatsApp...')
+      logger.info('Menghubungkan ke WhatsApp...')
     }
 
     if (connection === 'open') {
@@ -209,7 +388,7 @@ async function boot() {
       runtime.registered = true
       runtime.latestQr = null
       runtime.latestQrAt = null
-      logger.success(`${config.botName} is connected.`)
+      logger.success(`${config.botName} berhasil terhubung.`)
     }
 
     if (connection === 'close') {
@@ -225,16 +404,16 @@ async function boot() {
       if (statusCode === DisconnectReason.loggedOut) {
         await clearSessionFiles()
         scheduleRestart(
-          'Session logged out. Clearing session files and restarting for a fresh pairing state...',
+          'Sesi logout terdeteksi. File sesi dibersihkan lalu bot restart untuk pairing ulang.',
           'logged-out',
         )
         return
       }
 
-      logger.warn('Connection closed. Reconnecting in 3 seconds...')
+      logger.warn('Koneksi tertutup. Coba sambung ulang dalam 3 detik...')
       setTimeout(() => {
         boot().catch((error) => {
-          logger.error(`Reconnect failed: ${error.message}`)
+          logger.error(`Reconnect gagal: ${error.message}`)
         })
       }, 3000)
     }
@@ -251,10 +430,6 @@ async function boot() {
     }
 
     const body = extractText(message).trim()
-    if (!body.startsWith(config.prefix)) {
-      return
-    }
-
     const sender = message.key.participant || message.key.remoteJid || ''
     const owner = isOwner(sender, config) || message.key.fromMe
 
@@ -262,39 +437,80 @@ async function boot() {
       return
     }
 
-    const commandLine = body.slice(config.prefix.length).trim()
-    if (!commandLine) {
-      return
-    }
-
-    const [rawName, ...args] = commandLine.split(/\s+/)
-    const command = registry.get(rawName.toLowerCase())
-    if (!command) {
-      return
-    }
-
     const reply = async (text) =>
       sock.sendMessage(message.key.remoteJid, { text }, { quoted: message })
 
-    if (command.ownerOnly && !owner) {
-      await reply('This command is owner-only.')
+    if (body.startsWith(config.prefix)) {
+      const commandLine = body.slice(config.prefix.length).trim()
+      if (!commandLine) {
+        return
+      }
+
+      const [rawName, ...args] = commandLine.split(/\s+/)
+      const command = registry.get(rawName.toLowerCase())
+      if (!command) {
+        return
+      }
+
+      if (command.ownerOnly && !owner) {
+        await reply('Perintah ini khusus owner.')
+        return
+      }
+
+      try {
+        await command.execute({
+          args,
+          body,
+          config,
+          groupSettings,
+          message,
+          owner,
+          registry,
+          reply,
+          sock,
+          state,
+        })
+        state.commandCount = registry.count()
+      } catch (error) {
+        logger.error(`Command ${command.name} gagal: ${error.message}`)
+        await reply(`Perintah gagal: ${error.message}`)
+      }
+      return
+    }
+
+    if (!body || message.key.fromMe) {
       return
     }
 
     try {
-      await command.execute({
-        args,
-        config,
-        groupSettings,
+      const stoppedByAntiLink = await handleAntiLink({
+        body,
         message,
-        registry,
+        owner,
         reply,
         sock,
-        state,
+      })
+      if (stoppedByAntiLink) {
+        return
+      }
+
+      const autoReplied = await handleAutoResponder({
+        body,
+        message,
+        reply,
+      })
+      if (autoReplied) {
+        return
+      }
+
+      await handleAutoAi({
+        body,
+        message,
+        reply,
+        sock,
       })
     } catch (error) {
-      logger.error(`Command ${command.name} failed: ${error.message}`)
-      await reply(`Command failed: ${error.message}`)
+      logger.warn(`Otomasi pesan gagal: ${error.message}`)
     }
   })
 
@@ -317,6 +533,6 @@ startHealthServer(config, state, runtime, {
 })
 
 boot().catch((error) => {
-  logger.error(`Boot failed: ${error.message}`)
+  logger.error(`Boot gagal: ${error.message}`)
   process.exitCode = 1
 })

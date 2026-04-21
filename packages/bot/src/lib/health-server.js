@@ -69,7 +69,7 @@ export function startHealthServer(config, state, runtime, actions) {
       if (!canAccessAdminSurface(request, config)) {
         writeJson(response, 403, {
           ok: false,
-          message: 'Pairing is restricted to localhost requests.',
+          message: 'Pairing hanya bisa diakses dari localhost atau permintaan admin yang sah.',
         })
         return
       }
@@ -78,7 +78,7 @@ export function startHealthServer(config, state, runtime, actions) {
       if (!phone) {
         writeJson(response, 400, {
           ok: false,
-          message: 'Missing phone query parameter.',
+          message: 'Parameter query phone wajib diisi.',
         })
         return
       }
@@ -117,8 +117,8 @@ export function startHealthServer(config, state, runtime, actions) {
         qr: runtime.latestQr,
         generatedAt: runtime.latestQrAt,
         message: runtime.latestQr
-          ? 'QR is ready to scan.'
-          : 'QR is not available yet. Wait for socket sync or reset the session.',
+          ? 'QR siap dipindai.'
+          : 'QR belum tersedia. Tunggu socket sinkron atau reset sesi dulu.',
       })
       return
     }
@@ -127,7 +127,7 @@ export function startHealthServer(config, state, runtime, actions) {
       if (!canAccessAdminSurface(request, config)) {
         writeJson(response, 403, {
           ok: false,
-          message: 'Reset is restricted to localhost requests.',
+          message: 'Reset hanya bisa diakses dari localhost atau permintaan admin yang sah.',
         })
         return
       }
@@ -135,7 +135,7 @@ export function startHealthServer(config, state, runtime, actions) {
       if (request.method !== 'POST') {
         writeJson(response, 405, {
           ok: false,
-          message: 'Method not allowed.',
+          message: 'Method tidak diizinkan.',
         })
         return
       }
@@ -155,7 +155,7 @@ export function startHealthServer(config, state, runtime, actions) {
       return
     }
 
-    writeJson(response, 404, { ok: false, message: 'Not found' })
+    writeJson(response, 404, { ok: false, message: 'Endpoint tidak ditemukan.' })
   })
 
   server.listen(config.healthPort, () => {
