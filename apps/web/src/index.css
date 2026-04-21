@@ -572,7 +572,14 @@ kbd {
   border: 0;
   border-radius: 14px;
   padding: 13px 16px;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   color: #091327;
   background: linear-gradient(90deg, var(--cyan), var(--blue));
   cursor: pointer;
@@ -585,15 +592,26 @@ kbd {
 
 .pairing-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px 140px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.pairing-actions .generate-button {
+  grid-column: 1 / -1;
 }
 
 .reset-button {
   border-radius: 14px;
   border: 1px solid rgba(255, 157, 157, 0.2);
   padding: 13px 16px;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   color: #ffdede;
   background: rgba(255, 138, 138, 0.08);
   cursor: pointer;
@@ -608,7 +626,14 @@ kbd {
   border-radius: 14px;
   border: 1px solid rgba(121, 169, 255, 0.2);
   padding: 13px 16px;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   color: #ecf3ff;
   background: rgba(121, 169, 255, 0.12);
   cursor: pointer;
@@ -1145,6 +1170,10 @@ kbd {
 
   .pairing-actions {
     grid-template-columns: 1fr;
+  }
+
+  .pairing-actions .generate-button {
+    grid-column: auto;
   }
 
   .hero-stat-bar {
