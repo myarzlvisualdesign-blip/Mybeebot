@@ -23,50 +23,69 @@ type BotStatus = {
   lastPairingRequestAt: string | null
 }
 
-const featureCards = [
-  {
-    title: 'Fresh core, not a raw clone',
-    text: 'Mybeebot takes inspiration from WA-BASE-BOT, but the project is rebuilt with a cleaner structure, safer config flow, and simpler command ownership.',
-  },
-  {
-    title: 'Bot runtime that stays practical',
-    text: 'The WhatsApp engine lives in a dedicated Node.js package using Baileys, pairing code login, persistent sessions, and a small local health endpoint.',
-  },
-  {
-    title: 'Cloudflare live surface',
-    text: 'The public-facing deploy runs on Cloudflare and exposes a branded launch page plus lightweight JSON endpoints for status and project metadata.',
-  },
-  {
-    title: 'Ready to extend',
-    text: 'Commands are loaded from a command directory so you can keep growing the bot without turning the codebase into one giant file.',
-  },
+const commandDescriptions: Record<string, string> = {
+  '.menu': 'Open the main control sheet.',
+  '.help': 'Readable command summary.',
+  '.ping': 'Latency and runtime check.',
+  '.alive': 'Current identity and health.',
+  '.repo': 'Jump to the repository.',
+  '.echo': 'Fast command response test.',
+  '.reload': 'Reload modules for the owner.',
+}
+
+const sidebarItems = [
+  { short: 'MB', label: 'Mybeebot', active: true },
+  { short: 'OV', label: 'Overview' },
+  { short: 'RT', label: 'Runtime' },
+  { short: 'CM', label: 'Commands' },
+  { short: 'PX', label: 'Proxy' },
+  { short: 'LG', label: 'Logs' },
 ]
 
-const commandDeck = [
-  { name: '.menu', detail: 'Full command overview grouped by category.' },
-  { name: '.help', detail: 'Readable command summary with aliases and notes.' },
-  { name: '.ping', detail: 'Latency and runtime check for quick diagnostics.' },
-  { name: '.alive', detail: 'System identity, owner metadata, mode, and health.' },
-  { name: '.repo', detail: 'Fast link back to the Mybeebot repository.' },
-  { name: '.echo', detail: 'Simple response testing while wiring new features.' },
-  { name: '.reload', detail: 'Owner-only command refresh without a full rewrite.' },
-]
+function formatUptime(seconds: number | undefined) {
+  if (!seconds) {
+    return '0m'
+  }
 
-const launchSteps = [
-  'Clone the repo and install workspace dependencies once from the root.',
-  'Copy `packages/bot/.env.example` to `.env` and set owner, prefix, and pairing number.',
-  'Run `npm run bot:start` to generate the pairing code and connect the WhatsApp session.',
-  'Run `npm run deploy` to publish the Cloudflare companion site and edge APIs.',
-]
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
 
-const envSnippet = `BOT_NAME=Mybeebot
-BOT_PREFIX=.
-BOT_MODE=public
-OWNER_NAME=Myarzl
-OWNER_NUMBERS=6281234567890
-PAIRING_NUMBER=6281234567890
-REPO_URL=https://github.com/myarzlvisualdesign-blip/Mybeebot
-WEBSITE_URL=https://mybeebot.myarzl-visualdesign.my.id`
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+
+  return `${minutes}m`
+}
+
+function getGreeting() {
+  const hour = new Date().getHours()
+
+  if (hour < 12) {
+    return 'Morning'
+  }
+
+  if (hour < 18) {
+    return 'Afternoon'
+  }
+
+  return 'Evening'
+}
+
+function getProgress(connection?: string) {
+  if (connection === 'open') {
+    return 100
+  }
+
+  if (connection === 'connecting') {
+    return 68
+  }
+
+  if (connection === 'closed') {
+    return 26
+  }
+
+  return 18
+}
 
 function App() {
   const [status, setStatus] = useState<LiveStatus | null>(null)
@@ -97,16 +116,6 @@ function App() {
       }
     }
 
-    loadStatus()
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    let active = true
-
     async function loadBotStatus() {
       try {
         const response = await fetch('/api/bot-health')
@@ -127,6 +136,7 @@ function App() {
       }
     }
 
+    loadStatus()
     loadBotStatus()
 
     return () => {
@@ -134,156 +144,309 @@ function App() {
     }
   }, [])
 
+  const greeting = getGreeting()
+  const edgeProgress = status?.status === 'live' ? 100 : 54
+  const runtimeProgress = getProgress(botStatus?.connection)
+  const pairingProgress = botStatus?.registered ? 100 : 34
+  const commandProgress = botStatus?.commandCount
+    ? Math.min(100, 44 + botStatus.commandCount * 8)
+    : 52
+  const overallReadiness = Math.round(
+    (edgeProgress + runtimeProgress + pairingProgress + commandProgress) / 4,
+  )
+  const activeCommands = status?.commands?.length
+    ? status.commands
+    : Object.keys(commandDescriptions)
+
+  const workflowRows = [
+    {
+      label: 'Edge worker bundle',
+      detail: status?.domain ?? 'Waiting for route',
+      percent: edgeProgress,
+      state: status?.status ?? 'Syncing',
+    },
+    {
+      label: 'Bot health proxy',
+      detail: '/api/bot-health',
+      percent: botStatus ? 100 : 40,
+      state: botStatus ? 'Live' : 'Pending',
+    },
+    {
+      label: 'Runtime socket',
+      detail: botStatus?.connection ?? 'Booting',
+      percent: runtimeProgress,
+      state: botStatus?.connection ?? 'Queueing',
+    },
+    {
+      label: 'Device pairing',
+      detail: botStatus?.registered ? 'WhatsApp linked' : 'Awaiting pair code',
+      percent: pairingProgress,
+      state: botStatus?.registered ? 'Ready' : 'Manual step',
+    },
+  ]
+
+  const systemFeed = [
+    `Deploy state: ${status?.status ?? 'checking'}`,
+    `Proxy health: ${botStatus ? 'reachable' : 'pending'}`,
+    `Last disconnect: ${botStatus?.lastDisconnectReason ?? 'none'}`,
+    `Pairing access: localhost only`,
+  ]
+
   return (
-    <div className="shell">
-      <header className="hero-panel">
-        <div className="hero-copy reveal">
-          <p className="eyebrow">Cloudflare Live Companion</p>
-          <h1>Mybeebot</h1>
-          <p className="lede">
-            A cleaner WhatsApp bot starter built for real extension work, with a fresh
-            command system, a dedicated Node.js runtime, and a branded Cloudflare deploy.
-          </p>
-          <div className="cta-row">
-            <a
-              className="primary-link"
-              href="https://github.com/myarzlvisualdesign-blip/Mybeebot"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open GitHub Repo
-            </a>
-            <a className="secondary-link" href="#launch-map">
-              Launch Checklist
-            </a>
-          </div>
-        </div>
+    <div className="dashboard-shell">
+      <div className="ambient ambient-one" />
+      <div className="ambient ambient-two" />
+      <div className="ambient ambient-three" />
 
-        <aside className="status-card reveal reveal-delay-1">
-          <div className="status-pill">
-            <span className="status-dot" />
-            Edge status
+      <div className="dashboard-frame">
+        <aside className="side-rail reveal">
+          <div className="brand-chip">MB</div>
+
+          <div className="rail-stack">
+            {sidebarItems.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                className={`rail-button${item.active ? ' active' : ''}`}
+              >
+                <span>{item.short}</span>
+              </button>
+            ))}
           </div>
-          <dl className="status-grid">
-            <div>
-              <dt>Deploy</dt>
-              <dd>{status?.status ?? 'checking'}</dd>
-            </div>
-            <div>
-              <dt>Domain</dt>
-              <dd>{status?.domain ?? 'mybeebot.myarzl-visualdesign.my.id'}</dd>
-            </div>
-            <div>
-              <dt>Runtime</dt>
-              <dd>{status?.runtime ?? 'Cloudflare Worker + static assets'}</dd>
-            </div>
-            <div>
-              <dt>Edge served</dt>
-              <dd>
-                {status?.edgeServedAt
-                  ? new Date(status.edgeServedAt).toLocaleString()
-                  : 'waiting'}
-              </dd>
-            </div>
-            <div>
-              <dt>Bot runtime</dt>
-              <dd>{botStatus?.connection ?? 'waiting'}</dd>
-            </div>
-            <div>
-              <dt>Bot pairing</dt>
-              <dd>{botStatus?.registered ? 'registered' : 'not paired yet'}</dd>
-            </div>
-          </dl>
-          <div className="status-note">
-            {statusError || botStatusError
-              ? statusError || botStatusError
-              : botStatus?.lastDisconnectReason
-                ? `Bot runtime is reachable. Last disconnect reason: ${botStatus.lastDisconnectReason}.`
-                : 'The public site and the bot runtime health proxy are both live on Cloudflare.'}
-          </div>
+
+          <div className="rail-glow" />
         </aside>
-      </header>
 
-      <main>
-        <section className="section reveal reveal-delay-1">
-          <div className="section-heading">
-            <p className="section-label">Why this build</p>
-            <h2>Base bot, rebuilt with better boundaries</h2>
-          </div>
-          <div className="feature-grid">
-            {featureCards.map((item) => (
-              <article key={item.title} className="card">
-                <h3>{item.title}</h3>
-                <p>{item.text}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="section split-section reveal reveal-delay-2">
-          <div className="stack-card">
-            <p className="section-label">Command deck</p>
-            <h2>Included bot commands</h2>
-            <div className="command-grid">
-              {commandDeck.map((command) => (
-                <article key={command.name} className="command-card">
-                  <strong>{command.name}</strong>
-                  <p>{command.detail}</p>
-                </article>
-              ))}
+        <section className="workspace">
+          <header className="topbar reveal reveal-delay-1">
+            <div>
+              <p className="topbar-label">Dashboard</p>
+              <h1>Mybeebot Tools</h1>
             </div>
-          </div>
 
-          <div className="stack-card">
-            <p className="section-label">Starter env</p>
-            <h2>Fast configuration shape</h2>
-            <pre>{envSnippet}</pre>
+            <div className="search-shell">
+              <span className="search-icon" />
+              <span className="search-copy">Search command, tunnel, pair code</span>
+              <kbd>shift f</kbd>
+            </div>
+          </header>
+
+          <div className="workspace-grid">
+            <main className="main-column">
+              <article className="panel hero-panel reveal reveal-delay-2">
+                <div className="hero-copy">
+                  <p className="eyebrow">Good {greeting},</p>
+                  <h2>Mybeebot Control</h2>
+                  <p className="hero-text">
+                    Tool dashboard with live Cloudflare edge status, bot proxy health,
+                    command matrix, and pairing readiness in one glass workspace.
+                  </p>
+                </div>
+
+                <div className="hero-stat-bar">
+                  <div>
+                    <span className="muted-label">Launch score</span>
+                    <strong>{overallReadiness}%</strong>
+                  </div>
+                  <div className="hero-chip-row">
+                    <span className="hero-chip">{status?.status ?? 'syncing edge'}</span>
+                    <span className="hero-chip">
+                      {botStatus?.registered ? 'device paired' : 'pairing pending'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="gradient-meter">
+                  <span style={{ width: `${overallReadiness}%` }} />
+                </div>
+
+                <div className="hero-metrics">
+                  <div className="metric-card large">
+                    <span>Loaded modules</span>
+                    <strong>{botStatus?.commandCount ?? activeCommands.length}</strong>
+                    <small>runtime command deck</small>
+                  </div>
+
+                  <div className="metric-card">
+                    <span>Runtime</span>
+                    <strong>{botStatus?.connection ?? 'booting'}</strong>
+                    <small>{formatUptime(botStatus?.uptimeSeconds)} uptime</small>
+                  </div>
+
+                  <div className="metric-card">
+                    <span>Domain</span>
+                    <strong>Live</strong>
+                    <small>{status?.domain ?? 'attaching route'}</small>
+                  </div>
+                </div>
+              </article>
+
+              <div className="split-grid">
+                <article className="panel queue-panel reveal reveal-delay-3">
+                  <div className="panel-head">
+                    <div>
+                      <p className="tiny-label">Runtime queue</p>
+                      <h3>Deployment flow</h3>
+                    </div>
+                    <span className="soft-pill">{overallReadiness}% synced</span>
+                  </div>
+
+                  <div className="workflow-list">
+                    {workflowRows.map((row) => (
+                      <div key={row.label} className="workflow-row">
+                        <div className="workflow-copy">
+                          <strong>{row.label}</strong>
+                          <span>{row.detail}</span>
+                        </div>
+
+                        <div className="workflow-meter">
+                          <div className="workflow-track">
+                            <span style={{ width: `${row.percent}%` }} />
+                          </div>
+                          <small>{row.state}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="panel pairing-panel reveal reveal-delay-4">
+                  <div className="panel-head">
+                    <div>
+                      <p className="tiny-label">Pair device</p>
+                      <h3>Local-only access</h3>
+                    </div>
+                  </div>
+
+                  <div className="pairing-command">
+                    <span>curl</span>
+                    <code>http://127.0.0.1:8788/pairing?phone=62...</code>
+                  </div>
+
+                  <div className="pairing-grid">
+                    <div className="mini-stat">
+                      <span>Mode</span>
+                      <strong>{botStatus?.mode ?? 'public'}</strong>
+                    </div>
+                    <div className="mini-stat">
+                      <span>Prefix</span>
+                      <strong>{botStatus?.prefix ?? '.'}</strong>
+                    </div>
+                    <div className="mini-stat">
+                      <span>Proxy</span>
+                      <strong>Cloudflare</strong>
+                    </div>
+                    <div className="mini-stat">
+                      <span>Device</span>
+                      <strong>{botStatus?.registered ? 'Linked' : 'Pending'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="pairing-note">
+                    {botStatusError
+                      ? botStatusError
+                      : 'Pairing code can only be requested from localhost, so the public tool surface stays locked down.'}
+                  </div>
+                </article>
+              </div>
+
+              <article className="panel command-panel reveal reveal-delay-4">
+                <div className="panel-head">
+                  <div>
+                    <p className="tiny-label">Command matrix</p>
+                    <h3>Loaded command deck</h3>
+                  </div>
+                  <a
+                    className="ghost-link"
+                    href="https://github.com/myarzlvisualdesign-blip/Mybeebot"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    open repo
+                  </a>
+                </div>
+
+                <div className="command-grid">
+                  {activeCommands.map((command) => (
+                    <article key={command} className="command-tile">
+                      <strong>{command}</strong>
+                      <p>{commandDescriptions[command] ?? 'Core command loaded in runtime.'}</p>
+                    </article>
+                  ))}
+                </div>
+              </article>
+            </main>
+
+            <aside className="side-column">
+              <article className="panel side-card accent reveal reveal-delay-2">
+                <p className="tiny-label">Workspace score</p>
+                <strong className="score-number">{overallReadiness}</strong>
+                <span className="score-unit">percent ready</span>
+                <div className="score-track">
+                  <span style={{ width: `${overallReadiness}%` }} />
+                </div>
+              </article>
+
+              <article className="panel side-card reveal reveal-delay-3">
+                <p className="tiny-label">Edge surface</p>
+                <h3>Live route</h3>
+                <ul className="detail-list">
+                  <li>{status?.domain ?? 'waiting for domain'}</li>
+                  <li>{status?.runtime ?? 'Worker static assets'}</li>
+                  <li>
+                    {status?.edgeServedAt
+                      ? `Updated ${new Date(status.edgeServedAt).toLocaleTimeString()}`
+                      : 'Waiting for edge ping'}
+                  </li>
+                </ul>
+              </article>
+
+              <article className="panel side-card reveal reveal-delay-4">
+                <p className="tiny-label">Runtime feed</p>
+                <h3>System notes</h3>
+                <ul className="feed-list">
+                  {systemFeed.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              </article>
+
+              <article className="panel side-card reveal reveal-delay-4">
+                <p className="tiny-label">Direct links</p>
+                <h3>Control paths</h3>
+                <a
+                  className="endpoint-link"
+                  href="https://mybeebot.myarzl-visualdesign.my.id/api/bot-health"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  /api/bot-health
+                </a>
+                <a
+                  className="endpoint-link"
+                  href="https://mybeebot.myarzl-visualdesign.my.id/api/bot-meta"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  /api/bot-meta
+                </a>
+              </article>
+
+              <article className="panel status-strip reveal reveal-delay-4">
+                <span className="status-led" />
+                <div>
+                  <strong>Live proxy online</strong>
+                  <p>
+                    {statusError
+                      ? statusError
+                      : 'Cloudflare edge and runtime proxy are responding from the same domain.'}
+                  </p>
+                </div>
+              </article>
+            </aside>
           </div>
         </section>
-
-        <section className="section architecture reveal reveal-delay-3">
-          <div className="section-heading">
-            <p className="section-label">Architecture</p>
-            <h2>Two surfaces, one repo</h2>
-          </div>
-          <div className="architecture-grid">
-            <article className="architecture-card">
-              <span>01</span>
-              <h3>Node bot package</h3>
-              <p>
-                The WhatsApp engine handles pairing, sessions, reconnect logic, and command
-                execution with a structure that is easier to maintain than the original single-file flow.
-              </p>
-            </article>
-            <article className="architecture-card">
-              <span>02</span>
-              <h3>Cloudflare worker</h3>
-              <p>
-                The edge layer serves the public site and lightweight JSON endpoints so the project has a clean live presence and a verifiable status surface.
-              </p>
-            </article>
-            <article className="architecture-card">
-              <span>03</span>
-              <h3>Workspace root</h3>
-              <p>
-                Root scripts keep install, lint, build, bot startup, and Cloudflare deployment all under one command map.
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section id="launch-map" className="section launch-strip reveal reveal-delay-4">
-          <div className="section-heading">
-            <p className="section-label">Launch map</p>
-            <h2>How this repo goes live</h2>
-          </div>
-          <ol className="launch-list">
-            {launchSteps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        </section>
-      </main>
+      </div>
     </div>
   )
 }
