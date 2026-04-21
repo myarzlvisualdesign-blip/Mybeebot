@@ -1,4 +1,5 @@
 import process from 'node:process'
+import { readdir, rm } from 'node:fs/promises'
 import qrcode from 'qrcode-terminal'
 import makeWASocket, {
   Browsers,
@@ -24,6 +25,7 @@ const runtime = {
   registered: false,
   lastPairingCode: null,
   lastPairingRequestAt: null,
+  resetScheduled: false,
   sock: null,
 }
 
@@ -64,6 +66,46 @@ async function requestPairingCode(phoneNumber) {
   runtime.lastPairingCode = pairingCode
   runtime.lastPairingRequestAt = new Date().toISOString()
   return pairingCode
+}
+
+async function resetSession() {
+  if (runtime.resetScheduled) {
+    return {
+      message: 'Reset already scheduled.',
+      restartScheduled: true,
+      clearedSession: true,
+    }
+  }
+
+  const entries = await readdir(config.sessionDir, { withFileTypes: true }).catch(() => [])
+  await Promise.all(
+    entries
+      .filter((entry) => entry.name !== '.gitkeep')
+      .map((entry) =>
+        rm(`${config.sessionDir}/${entry.name}`, {
+          force: true,
+          recursive: entry.isDirectory(),
+        }),
+      ),
+  )
+
+  runtime.registered = false
+  runtime.lastPairingCode = null
+  runtime.lastPairingRequestAt = null
+  runtime.resetScheduled = true
+  state.connection = 'resetting'
+  state.lastDisconnectReason = 'manual-reset'
+  logger.warn('Session reset requested. Restarting bot process...')
+
+  setTimeout(() => {
+    process.exit(0)
+  }, 300)
+
+  return {
+    message: 'Session cleared. Bot restart scheduled.',
+    restartScheduled: true,
+    clearedSession: true,
+  }
 }
 
 async function boot() {
@@ -192,7 +234,7 @@ async function boot() {
   })
 }
 
-startHealthServer(config, state, runtime, { requestPairingCode })
+startHealthServer(config, state, runtime, { requestPairingCode, resetSession })
 
 boot().catch((error) => {
   logger.error(`Boot failed: ${error.message}`)

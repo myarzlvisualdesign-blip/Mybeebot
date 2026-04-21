@@ -1,6 +1,8 @@
 node_modules
 dist
 .DS_Store
+.env
+.pairing-secrets.tmp
 .wrangler
 apps/web/dist
 packages/bot/.env

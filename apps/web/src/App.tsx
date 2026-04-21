@@ -23,6 +23,23 @@ type BotStatus = {
   lastPairingRequestAt: string | null
 }
 
+type PairingResult = {
+  ok: boolean
+  phone?: string
+  code?: string
+  requestedAt?: string
+  message?: string
+}
+
+type ResetResult = {
+  ok: boolean
+  message?: string
+  restartScheduled?: boolean
+  clearedSession?: boolean
+}
+
+const ADMIN_KEY_STORAGE = 'mybeebot-admin-key'
+
 const commandDescriptions: Record<string, string> = {
   '.menu': 'Open the main control sheet.',
   '.help': 'Readable command summary.',
@@ -87,62 +104,99 @@ function getProgress(connection?: string) {
   return 18
 }
 
+function normalizePhone(phone: string) {
+  const digits = phone.replace(/\D/g, '')
+
+  if (!digits) {
+    return ''
+  }
+
+  if (digits.startsWith('0')) {
+    return `62${digits.slice(1)}`
+  }
+
+  return digits
+}
+
 function App() {
   const [status, setStatus] = useState<LiveStatus | null>(null)
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [botStatusError, setBotStatusError] = useState<string | null>(null)
+  const [pairPhone, setPairPhone] = useState('087830300031')
+  const [adminKey, setAdminKey] = useState(() => {
+    if (typeof window === 'undefined') {
+      return ''
+    }
+
+    return window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? ''
+  })
+  const [pairingResult, setPairingResult] = useState<PairingResult | null>(null)
+  const [pairingError, setPairingError] = useState<string | null>(null)
+  const [resetNotice, setResetNotice] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
+
+  async function loadStatus() {
+    try {
+      const response = await fetch('/api/status')
+      if (!response.ok) {
+        throw new Error(`Status request failed with ${response.status}`)
+      }
+
+      const payload = (await response.json()) as LiveStatus
+      setStatus(payload)
+      setStatusError(null)
+    } catch (error) {
+      setStatusError(
+        error instanceof Error ? error.message : 'Unable to reach live status endpoint.',
+      )
+    }
+  }
+
+  async function loadBotStatus() {
+    try {
+      const response = await fetch('/api/bot-health')
+      if (!response.ok) {
+        throw new Error(`Bot status request failed with ${response.status}`)
+      }
+
+      const payload = (await response.json()) as BotStatus
+      setBotStatus(payload)
+      setBotStatusError(null)
+    } catch (error) {
+      setBotStatusError(
+        error instanceof Error ? error.message : 'Unable to reach bot health proxy.',
+      )
+    }
+  }
 
   useEffect(() => {
-    let active = true
-
-    async function loadStatus() {
-      try {
-        const response = await fetch('/api/status')
-        if (!response.ok) {
-          throw new Error(`Status request failed with ${response.status}`)
-        }
-
-        const payload = (await response.json()) as LiveStatus
-        if (active) {
-          setStatus(payload)
-        }
-      } catch (error) {
-        if (active) {
-          setStatusError(
-            error instanceof Error ? error.message : 'Unable to reach live status endpoint.',
-          )
-        }
-      }
+    const refresh = () => {
+      void loadStatus()
+      void loadBotStatus()
     }
 
-    async function loadBotStatus() {
-      try {
-        const response = await fetch('/api/bot-health')
-        if (!response.ok) {
-          throw new Error(`Bot status request failed with ${response.status}`)
-        }
+    const timeout = window.setTimeout(refresh, 0)
 
-        const payload = (await response.json()) as BotStatus
-        if (active) {
-          setBotStatus(payload)
-        }
-      } catch (error) {
-        if (active) {
-          setBotStatusError(
-            error instanceof Error ? error.message : 'Unable to reach bot health proxy.',
-          )
-        }
-      }
-    }
-
-    loadStatus()
-    loadBotStatus()
+    const interval = window.setInterval(() => {
+      refresh()
+    }, 8000)
 
     return () => {
-      active = false
+      window.clearTimeout(timeout)
+      window.clearInterval(interval)
     }
   }, [])
+
+  useEffect(() => {
+    if (!adminKey) {
+      window.localStorage.removeItem(ADMIN_KEY_STORAGE)
+      return
+    }
+
+    window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey)
+  }, [adminKey])
 
   const greeting = getGreeting()
   const edgeProgress = status?.status === 'live' ? 100 : 54
@@ -189,8 +243,75 @@ function App() {
     `Deploy state: ${status?.status ?? 'checking'}`,
     `Proxy health: ${botStatus ? 'reachable' : 'pending'}`,
     `Last disconnect: ${botStatus?.lastDisconnectReason ?? 'none'}`,
-    `Pairing access: localhost only`,
+    `Pairing surface: website admin gate`,
   ]
+
+  async function handleGeneratePairingCode() {
+    setIsGenerating(true)
+    setPairingError(null)
+    setResetNotice(null)
+
+    try {
+      const response = await fetch('/api/bot-pairing', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone: normalizePhone(pairPhone),
+          adminKey,
+        }),
+      })
+
+      const payload = (await response.json()) as PairingResult
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || `Pairing request failed with ${response.status}`)
+      }
+
+      setPairingResult(payload)
+      await loadBotStatus()
+    } catch (error) {
+      setPairingResult(null)
+      setPairingError(
+        error instanceof Error ? error.message : 'Unable to generate a pairing code.',
+      )
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  async function handleResetSession() {
+    setIsResetting(true)
+    setPairingError(null)
+
+    try {
+      const response = await fetch('/api/bot-reset', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          adminKey,
+        }),
+      })
+
+      const payload = (await response.json()) as ResetResult
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || `Reset request failed with ${response.status}`)
+      }
+
+      setPairingResult(null)
+      setResetNotice(payload.message || 'Session cleared. Wait a few seconds, then generate a fresh code.')
+      window.setTimeout(() => {
+        void loadBotStatus()
+      }, 3500)
+    } catch (error) {
+      setResetNotice(null)
+      setPairingError(error instanceof Error ? error.message : 'Unable to reset bot session.')
+    } finally {
+      setIsResetting(false)
+    }
+  }
 
   return (
     <div className="dashboard-shell">
@@ -314,13 +435,56 @@ function App() {
                   <div className="panel-head">
                     <div>
                       <p className="tiny-label">Pair device</p>
-                      <h3>Local-only access</h3>
+                      <h3>Website pairing panel</h3>
+                    </div>
+                  </div>
+
+                  <div className="pairing-form">
+                    <label className="field-block">
+                      <span>WhatsApp number</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={pairPhone}
+                        onChange={(event) => setPairPhone(event.target.value)}
+                        placeholder="0878..."
+                      />
+                    </label>
+
+                    <label className="field-block">
+                      <span>Admin key</span>
+                      <input
+                        type="password"
+                        value={adminKey}
+                        onChange={(event) => setAdminKey(event.target.value)}
+                        placeholder="Enter dashboard admin key"
+                      />
+                    </label>
+
+                    <div className="pairing-actions">
+                      <button
+                        type="button"
+                        className="generate-button"
+                        onClick={handleGeneratePairingCode}
+                        disabled={isGenerating || isResetting}
+                      >
+                        {isGenerating ? 'Generating...' : 'Generate Pairing Code'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="reset-button"
+                        onClick={handleResetSession}
+                        disabled={isGenerating || isResetting}
+                      >
+                        {isResetting ? 'Resetting...' : 'Reset Session'}
+                      </button>
                     </div>
                   </div>
 
                   <div className="pairing-command">
-                    <span>curl</span>
-                    <code>http://127.0.0.1:8788/pairing?phone=62...</code>
+                    <span>Phone format</span>
+                    <code>{normalizePhone(pairPhone) || '62xxxxxxxxxxx'}</code>
                   </div>
 
                   <div className="pairing-grid">
@@ -342,10 +506,24 @@ function App() {
                     </div>
                   </div>
 
+                  <div className="pairing-result">
+                    <span>Latest code</span>
+                    <strong>{pairingResult?.code ?? '--------'}</strong>
+                    <small>
+                      {pairingResult?.requestedAt
+                        ? `Generated ${new Date(pairingResult.requestedAt).toLocaleTimeString()}`
+                        : 'Generate a fresh code, then enter it in WhatsApp Linked Devices.'}
+                    </small>
+                  </div>
+
                   <div className="pairing-note">
-                    {botStatusError
-                      ? botStatusError
-                      : 'Pairing code can only be requested from localhost, so the public tool surface stays locked down.'}
+                    {pairingError || botStatusError
+                      ? pairingError || botStatusError
+                      : resetNotice
+                        ? resetNotice
+                      : pairingResult?.code
+                        ? `Use code ${pairingResult.code} immediately in WhatsApp Linked Devices.`
+                        : 'This panel can generate a fresh code from the website, but only after you unlock it with the admin key.'}
                   </div>
                 </article>
               </div>

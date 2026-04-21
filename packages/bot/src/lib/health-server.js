@@ -15,6 +15,15 @@ function isLocalRequest(request) {
   return host.includes('127.0.0.1') || host.includes('localhost')
 }
 
+function isAuthorizedRemotePairing(request, config) {
+  const providedKey = String(request.headers['x-bot-admin-key'] || '')
+  return Boolean(config.pairingProxyKey) && providedKey === config.pairingProxyKey
+}
+
+function canAccessAdminSurface(request, config) {
+  return isLocalRequest(request) || isAuthorizedRemotePairing(request, config)
+}
+
 export function startHealthServer(config, state, runtime, actions) {
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`)
@@ -54,7 +63,7 @@ export function startHealthServer(config, state, runtime, actions) {
     }
 
     if (url.pathname === '/pairing') {
-      if (!isLocalRequest(request)) {
+      if (!canAccessAdminSurface(request, config)) {
         writeJson(response, 403, {
           ok: false,
           message: 'Pairing is restricted to localhost requests.',
@@ -78,6 +87,39 @@ export function startHealthServer(config, state, runtime, actions) {
           phone,
           code,
           requestedAt: runtime.lastPairingRequestAt,
+          remote: !isLocalRequest(request),
+        })
+      } catch (error) {
+        writeJson(response, 500, {
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+      return
+    }
+
+    if (url.pathname === '/session/reset') {
+      if (!canAccessAdminSurface(request, config)) {
+        writeJson(response, 403, {
+          ok: false,
+          message: 'Reset is restricted to localhost requests.',
+        })
+        return
+      }
+
+      if (request.method !== 'POST') {
+        writeJson(response, 405, {
+          ok: false,
+          message: 'Method not allowed.',
+        })
+        return
+      }
+
+      try {
+        const result = await actions.resetSession()
+        writeJson(response, 200, {
+          ok: true,
+          ...result,
         })
       } catch (error) {
         writeJson(response, 500, {

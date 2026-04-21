@@ -1,8 +1,12 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import 'dotenv/config'
+import dotenv from 'dotenv'
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = path.resolve(packageRoot, '..', '..')
+
+dotenv.config({ path: path.join(repoRoot, '.env') })
+dotenv.config({ path: path.join(packageRoot, '.env'), override: false })
 
 function asBoolean(value, fallback) {
   if (value === undefined) {
@@ -29,6 +33,7 @@ export const config = {
   sessionDir: path.resolve(packageRoot, process.env.SESSION_DIR || './session'),
   healthPort: Number(process.env.HEALTH_PORT || 8788),
   usePairingCode: asBoolean(process.env.USE_PAIRING_CODE, true),
+  pairingProxyKey: process.env.PAIRING_PROXY_KEY || '',
   repoUrl: process.env.REPO_URL || 'https://github.com/myarzlvisualdesign-blip/Mybeebot',
   websiteUrl:
     process.env.WEBSITE_URL || 'https://mybeebot.myarzl-visualdesign.my.id',

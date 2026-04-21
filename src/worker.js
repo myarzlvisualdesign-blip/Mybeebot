@@ -40,6 +40,123 @@ async function proxyBotRequest(request, env, targetPath) {
   });
 }
 
+async function handleBotPairing(request, env) {
+  if (!env.BOT_TUNNEL_URL) {
+    return Response.json(
+      {
+        ok: false,
+        message: "Bot tunnel URL is not configured.",
+      },
+      { status: 503 },
+    );
+  }
+
+  if (request.method !== "POST") {
+    return Response.json(
+      {
+        ok: false,
+        message: "Method not allowed.",
+      },
+      { status: 405 },
+    );
+  }
+
+  const payload = await request.json().catch(() => null);
+  const phone = String(payload?.phone || "").replace(/\D/g, "");
+  const adminKey = String(payload?.adminKey || "");
+
+  if (!phone) {
+    return Response.json(
+      {
+        ok: false,
+        message: "Phone number is required.",
+      },
+      { status: 400 },
+    );
+  }
+
+  if (!env.BOT_ADMIN_KEY || adminKey !== env.BOT_ADMIN_KEY) {
+    return Response.json(
+      {
+        ok: false,
+        message: "Invalid admin key.",
+      },
+      { status: 403 },
+    );
+  }
+
+  const upstream = new URL(`/pairing?phone=${encodeURIComponent(phone)}`, env.BOT_TUNNEL_URL.endsWith("/") ? env.BOT_TUNNEL_URL : `${env.BOT_TUNNEL_URL}/`);
+  const response = await fetch(upstream.toString(), {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      "x-bot-admin-key": env.BOT_PAIRING_PROXY_KEY || "",
+    },
+  });
+
+  const body = await response.text();
+  return new Response(body, {
+    status: response.status,
+    headers: {
+      "access-control-allow-origin": "*",
+      "content-type": response.headers.get("content-type") || "application/json",
+    },
+  });
+}
+
+async function handleBotReset(request, env) {
+  if (!env.BOT_TUNNEL_URL) {
+    return Response.json(
+      {
+        ok: false,
+        message: "Bot tunnel URL is not configured.",
+      },
+      { status: 503 },
+    );
+  }
+
+  if (request.method !== "POST") {
+    return Response.json(
+      {
+        ok: false,
+        message: "Method not allowed.",
+      },
+      { status: 405 },
+    );
+  }
+
+  const payload = await request.json().catch(() => null);
+  const adminKey = String(payload?.adminKey || "");
+
+  if (!env.BOT_ADMIN_KEY || adminKey !== env.BOT_ADMIN_KEY) {
+    return Response.json(
+      {
+        ok: false,
+        message: "Invalid admin key.",
+      },
+      { status: 403 },
+    );
+  }
+
+  const upstream = new URL("/session/reset", env.BOT_TUNNEL_URL.endsWith("/") ? env.BOT_TUNNEL_URL : `${env.BOT_TUNNEL_URL}/`);
+  const response = await fetch(upstream.toString(), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "x-bot-admin-key": env.BOT_PAIRING_PROXY_KEY || "",
+    },
+  });
+
+  const body = await response.text();
+  return new Response(body, {
+    status: response.status,
+    headers: {
+      "access-control-allow-origin": "*",
+      "content-type": response.headers.get("content-type") || "application/json",
+    },
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -74,6 +191,14 @@ export default {
 
     if (url.pathname === "/api/bot-meta") {
       return proxyBotRequest(request, env, "/meta");
+    }
+
+    if (url.pathname === "/api/bot-pairing") {
+      return handleBotPairing(request, env);
+    }
+
+    if (url.pathname === "/api/bot-reset") {
+      return handleBotReset(request, env);
     }
 
     return env.ASSETS.fetch(request);
