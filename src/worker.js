@@ -3,7 +3,9 @@ const commands = [
   ".help",
   ".ping",
   ".alive",
+  ".owner",
   ".repo",
+  ".uptime",
   ".echo",
   ".reload"
 ];

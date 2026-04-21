@@ -91,7 +91,9 @@ const commandDescriptions: Record<string, string> = {
   '.help': 'Readable command summary.',
   '.ping': 'Latency and runtime check.',
   '.alive': 'Current identity and health.',
+  '.owner': 'Show owner identity and contact.',
   '.repo': 'Jump to the repository.',
+  '.uptime': 'Show bot runtime duration.',
   '.echo': 'Fast command response test.',
   '.reload': 'Reload modules for the owner.',
 }
@@ -101,7 +103,9 @@ const commandExamples: Record<string, string> = {
   '.help': '.help',
   '.ping': '.ping',
   '.alive': '.alive',
+  '.owner': '.owner',
   '.repo': '.repo',
+  '.uptime': '.uptime',
   '.echo': '.echo halo',
   '.reload': '.reload',
 }
@@ -432,7 +436,7 @@ function App() {
   const normalizedPhone = normalizePhone(pairPhone)
   const isLinked = Boolean(botStatus?.registered)
   const isBotReady = isLinked && botStatus?.connection === 'open'
-  const starterCommands = ['.menu', '.ping', '.alive', '.echo']
+  const starterCommands = ['.menu', '.ping', '.alive', '.owner']
 
   const filteredCommands = activeCommands.filter((command) => {
     if (!searchNeedle) {
