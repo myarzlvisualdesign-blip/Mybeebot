@@ -6,6 +6,8 @@ const defaults = {
   goodbye: false,
   antiLink: 'off',
   antiSpam: false,
+  antiBadword: false,
+  badWords: [],
   aiReply: false,
   autoResponder: false,
   autoReplies: {},
@@ -14,12 +16,15 @@ const defaults = {
 function normalizeSettings(value = {}) {
   const autoReplies =
     value.autoReplies && typeof value.autoReplies === 'object' ? value.autoReplies : {}
+  const badWords = Array.isArray(value.badWords) ? value.badWords : []
 
   return {
     ...defaults,
     ...value,
     antiLink: ['off', 'warn', 'kick'].includes(value.antiLink) ? value.antiLink : 'off',
     antiSpam: Boolean(value.antiSpam),
+    antiBadword: Boolean(value.antiBadword),
+    badWords: [...new Set(badWords.map((word) => String(word).trim().toLowerCase()).filter(Boolean))],
     aiReply: Boolean(value.aiReply),
     autoResponder: Boolean(value.autoResponder),
     autoReplies: Object.fromEntries(
@@ -114,6 +119,27 @@ export class GroupSettingsStore {
 
     delete autoReplies[normalizedTrigger]
     return this.set(jid, { autoReplies })
+  }
+
+  async addBadWord(jid, word) {
+    const normalizedWord = String(word || '').trim().toLowerCase()
+    if (!normalizedWord) {
+      throw new Error('Kata yang mau diblokir tidak boleh kosong.')
+    }
+
+    const current = this.get(jid)
+    return this.set(jid, {
+      badWords: [...new Set([...(current.badWords || []), normalizedWord])],
+    })
+  }
+
+  async removeBadWord(jid, word) {
+    const normalizedWord = String(word || '').trim().toLowerCase()
+    const current = this.get(jid)
+
+    return this.set(jid, {
+      badWords: (current.badWords || []).filter((entry) => entry !== normalizedWord),
+    })
   }
 
   list() {

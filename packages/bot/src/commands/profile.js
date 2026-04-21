@@ -1,16 +1,18 @@
 import { getChatJid, getSenderJid, isGroupChat, toMention } from '../lib/group-utils.js'
 import { isOwner } from '../lib/message-utils.js'
+import { renderProfileCard } from '../lib/profile-card.js'
 
 export default {
   name: 'profile',
-  aliases: ['me', 'profil'],
+  aliases: ['me', 'profil', 'level', 'rank'],
   category: 'utilitas',
-  description: 'Tampilkan profil singkat pengirim dan konteks chat.',
-  async execute({ config, message, reply, sock }) {
+  description: 'Tampilkan kartu profil, level, dan status user.',
+  async execute({ config, message, sock, userStore }) {
     const chatJid = getChatJid(message)
     const sender = getSenderJid(message)
     const group = isGroupChat(message)
     const owner = isOwner(sender, config) || Boolean(message?.key?.fromMe)
+    const user = userStore.get(sender)
     let role = owner ? 'Owner 👑' : 'Member 👤'
     let chatName = 'Chat pribadi'
 
@@ -23,16 +25,35 @@ export default {
       chatName = metadata?.subject || 'Grup WhatsApp'
     }
 
-    await reply(
-      [
-        '╭━〔 🙋 PROFILE PENGGUNA 〕━⬣',
-        `┃ Nama Tag: ${toMention(sender)}`,
-        `┃ Nomor: +${String(sender).split('@')[0]}`,
-        `┃ Peran: ${role}`,
-        `┃ Tipe Chat: ${group ? 'Grup 👥' : 'Pribadi 💬'}`,
-        `┃ Nama Chat: ${chatName}`,
-        '╰━━━━━━━━━━━━━━━━⬣',
-      ].join('\n'),
+    const avatarUrl = await sock.profilePictureUrl(sender, 'image').catch(() => null)
+    const card = await renderProfileCard({
+      avatarUrl,
+      botName: config.botName,
+      handle: toMention(sender),
+      role,
+      premium: user.premium,
+      level: user.level,
+      xp: user.xp,
+      commandCount: user.commandCount,
+      messageCount: user.messageCount,
+    })
+
+    await sock.sendMessage(
+      message.key.remoteJid,
+      {
+        image: card,
+        caption: [
+          '╭━〔 🙋 PROFILE PENGGUNA 〕━⬣',
+          `┃ Nama Tag: ${toMention(sender)}`,
+          `┃ Nomor: +${String(sender).split('@')[0]}`,
+          `┃ Peran: ${role}`,
+          `┃ Premium: ${user.premium ? 'aktif ⭐' : 'reguler'}`,
+          `┃ Tipe Chat: ${group ? 'Grup 👥' : 'Pribadi 💬'}`,
+          `┃ Nama Chat: ${chatName}`,
+          '╰━━━━━━━━━━━━━━━━⬣',
+        ].join('\n'),
+      },
+      { quoted: message },
     )
   },
 }

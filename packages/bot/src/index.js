@@ -21,10 +21,16 @@ import { startHealthServer } from './lib/health-server.js'
 import { logger } from './lib/logger.js'
 import { cleanNumber, extractText, isOwner } from './lib/message-utils.js'
 import { GroupSettingsStore } from './lib/settings-store.js'
+import { SystemSettingsStore } from './lib/system-settings-store.js'
+import { UserStore } from './lib/user-store.js'
 import { renderWelcomeCard } from './lib/welcome-card.js'
 
 const registry = new CommandRegistry()
 const groupSettings = new GroupSettingsStore(new URL('../data/group-settings.json', import.meta.url))
+const systemSettings = new SystemSettingsStore(
+  new URL('../data/system-settings.json', import.meta.url),
+)
+const userStore = new UserStore(new URL('../data/users.json', import.meta.url))
 const state = {
   commandCount: 0,
   connection: 'booting',
@@ -101,6 +107,11 @@ function buildAiPrompt(body) {
     .replace(new RegExp(`^${config.botName}\\s*[:,-]?\\s*`, 'i'), '')
     .replace(/^bot\s*[:,-]?\s*/i, '')
     .trim()
+}
+
+function containsBadWord(text, badWords = []) {
+  const normalized = String(text || '').toLowerCase()
+  return badWords.find((word) => normalized.includes(word)) || null
 }
 
 function trackSpamActivity(chatJid, sender, isCommand) {
@@ -362,6 +373,36 @@ async function handleAutoAi({ body, message, reply, sock }) {
   return true
 }
 
+async function handleAntiBadword({ body, message, owner, reply, sock }) {
+  const chatJid = getChatJid(message)
+  if (!chatJid.endsWith('@g.us')) {
+    return false
+  }
+
+  const settings = groupSettings.get(chatJid)
+  if (!settings.antiBadword || !settings.badWords.length) {
+    return false
+  }
+
+  const sender = getSenderJid(message)
+  const { senderAdmin } = await getParticipantState(sock, chatJid, sender)
+  if (owner || senderAdmin) {
+    return false
+  }
+
+  const matched = containsBadWord(body, settings.badWords)
+  if (!matched) {
+    return false
+  }
+
+  await userStore.touch(sender, {
+    warning: true,
+  })
+
+  await reply(`🚫 Kata *${matched}* terdeteksi. Jaga obrolan tetap rapi ya ${toMention(sender)}.`)
+  return true
+}
+
 async function handleAntiSpam({ body, isCommand, message, owner, reply, sock }) {
   const chatJid = getChatJid(message)
   if (!chatJid.endsWith('@g.us') || !body) {
@@ -402,8 +443,61 @@ async function handleAntiSpam({ body, isCommand, message, owner, reply, sock }) 
   return false
 }
 
+async function trackUserProgress({ isCommand, message, reply }) {
+  const sender = getSenderJid(message)
+  if (!sender || message.key.fromMe || sender === 'status@broadcast') {
+    return
+  }
+
+  const user = userStore.get(sender)
+  const xpGain = (isCommand ? 8 : 3) + (user.premium ? 4 : 0)
+  const updated = await userStore.touch(sender, {
+    message: true,
+    command: isCommand,
+    xpGain,
+  })
+
+  if (updated.leveledUp) {
+    await reply(
+      `🎉 Selamat ${toMention(sender)}! Level kamu naik ke *${updated.level}*${updated.premium ? ' dengan bonus premium ⭐' : ''}.`,
+    )
+  }
+}
+
+async function handleCallProtection(sock, calls = []) {
+  const settings = systemSettings.get()
+  if (!settings.antiCall) {
+    return
+  }
+
+  for (const call of calls) {
+    if (!call || call.status !== 'offer' || call.isGroup) {
+      continue
+    }
+
+    try {
+      await sock.rejectCall(call.id, call.from)
+      await userStore.touch(call.from, {
+        warning: true,
+      })
+      await sock.sendMessage(call.from, {
+        text: [
+          '📵 *ANTI-CALL AKTIF*',
+          '',
+          'Bot ini tidak menerima telepon suara/video.',
+          `Silakan pakai chat biasa dengan prefix *${config.prefix}* ya.`,
+        ].join('\n'),
+      })
+    } catch (error) {
+      logger.warn(`Anti-call gagal untuk ${call.from}: ${error.message}`)
+    }
+  }
+}
+
 async function boot() {
   await groupSettings.load()
+  await systemSettings.load()
+  await userStore.load()
   await registry.load()
   state.commandCount = registry.count()
 
@@ -504,6 +598,16 @@ async function boot() {
       sock.sendMessage(message.key.remoteJid, { text }, { quoted: message })
 
     try {
+      await trackUserProgress({
+        isCommand: body.startsWith(config.prefix),
+        message,
+        reply,
+      })
+    } catch (error) {
+      logger.warn(`Tracking user gagal: ${error.message}`)
+    }
+
+    try {
       const blockedBySpam = await handleAntiSpam({
         body,
         isCommand: body.startsWith(config.prefix),
@@ -542,14 +646,16 @@ async function boot() {
           body,
           config,
           groupSettings,
-          message,
-          owner,
-          registry,
-          reply,
-          sock,
-          state,
-        })
-        state.commandCount = registry.count()
+        message,
+        owner,
+        registry,
+        reply,
+        sock,
+        state,
+        systemSettings,
+        userStore,
+      })
+      state.commandCount = registry.count()
       } catch (error) {
         logger.error(`Command ${command.name} gagal: ${error.message}`)
         await reply(`Perintah gagal: ${error.message}`)
@@ -570,6 +676,17 @@ async function boot() {
         sock,
       })
       if (stoppedByAntiLink) {
+        return
+      }
+
+      const stoppedByBadword = await handleAntiBadword({
+        body,
+        message,
+        owner,
+        reply,
+        sock,
+      })
+      if (stoppedByBadword) {
         return
       }
 
@@ -595,6 +712,10 @@ async function boot() {
 
   sock.ev.on('group-participants.update', async (event) => {
     await handleGroupParticipantsUpdate(sock, event)
+  })
+
+  sock.ev.on('call', async (calls) => {
+    await handleCallProtection(sock, calls)
   })
 }
 
