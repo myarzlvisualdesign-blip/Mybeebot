@@ -16,7 +16,8 @@
     "lint:bot": "npm run lint --workspace @mybeebot/bot",
     "build": "npm run build:web",
     "lint": "npm run lint:web && npm run lint:bot",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:worker": "wrangler deploy"
   },
   "devDependencies": {
     "wrangler": "^4.84.0"

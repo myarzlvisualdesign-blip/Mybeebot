@@ -9,6 +9,20 @@ type LiveStatus = {
   commands: string[]
 }
 
+type BotStatus = {
+  ok: boolean
+  bot: string
+  mode: string
+  prefix: string
+  connection: string
+  commandCount: number
+  lastConnectedAt: string | null
+  lastDisconnectReason: string | null
+  uptimeSeconds: number
+  registered: boolean
+  lastPairingRequestAt: string | null
+}
+
 const featureCards = [
   {
     title: 'Fresh core, not a raw clone',
@@ -56,7 +70,9 @@ WEBSITE_URL=https://mybeebot.myarzl-visualdesign.my.id`
 
 function App() {
   const [status, setStatus] = useState<LiveStatus | null>(null)
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [botStatusError, setBotStatusError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -82,6 +98,36 @@ function App() {
     }
 
     loadStatus()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadBotStatus() {
+      try {
+        const response = await fetch('/api/bot-health')
+        if (!response.ok) {
+          throw new Error(`Bot status request failed with ${response.status}`)
+        }
+
+        const payload = (await response.json()) as BotStatus
+        if (active) {
+          setBotStatus(payload)
+        }
+      } catch (error) {
+        if (active) {
+          setBotStatusError(
+            error instanceof Error ? error.message : 'Unable to reach bot health proxy.',
+          )
+        }
+      }
+    }
+
+    loadBotStatus()
 
     return () => {
       active = false
@@ -139,11 +185,21 @@ function App() {
                   : 'waiting'}
               </dd>
             </div>
+            <div>
+              <dt>Bot runtime</dt>
+              <dd>{botStatus?.connection ?? 'waiting'}</dd>
+            </div>
+            <div>
+              <dt>Bot pairing</dt>
+              <dd>{botStatus?.registered ? 'registered' : 'not paired yet'}</dd>
+            </div>
           </dl>
           <div className="status-note">
-            {statusError
-              ? statusError
-              : 'The public site is live on Cloudflare. The WhatsApp socket runtime stays inside the bot package.'}
+            {statusError || botStatusError
+              ? statusError || botStatusError
+              : botStatus?.lastDisconnectReason
+                ? `Bot runtime is reachable. Last disconnect reason: ${botStatus.lastDisconnectReason}.`
+                : 'The public site and the bot runtime health proxy are both live on Cloudflare.'}
           </div>
         </aside>
       </header>

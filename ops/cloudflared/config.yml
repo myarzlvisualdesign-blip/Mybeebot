@@ -1,0 +1,7 @@
+tunnel: 96d3ffd7-c20f-4127-99af-797974f15bae
+credentials-file: /Users/a1/.cloudflared/96d3ffd7-c20f-4127-99af-797974f15bae.json
+
+ingress:
+  - hostname: bot.myarzl-visualdesign.my.id.berylgacofishing.my.id
+    service: http://127.0.0.1:8788
+  - service: http_status:404

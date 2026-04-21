@@ -1,4 +1,3 @@
-import readline from 'node:readline/promises'
 import process from 'node:process'
 import qrcode from 'qrcode-terminal'
 import makeWASocket, {
@@ -21,14 +20,11 @@ const state = {
   lastConnectedAt: null,
   lastDisconnectReason: null,
 }
-
-function ask(question) {
-  const terminal = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  })
-
-  return terminal.question(question).finally(() => terminal.close())
+const runtime = {
+  registered: false,
+  lastPairingCode: null,
+  lastPairingRequestAt: null,
+  sock: null,
 }
 
 async function ensurePairingCode(sock) {
@@ -38,15 +34,36 @@ async function ensurePairingCode(sock) {
 
   let phoneNumber = cleanNumber(config.pairingNumber)
   if (!phoneNumber) {
-    phoneNumber = cleanNumber(await ask('Enter WhatsApp number for pairing: '))
+    logger.warn(
+      `No PAIRING_NUMBER configured. Request one locally at http://127.0.0.1:${config.healthPort}/pairing?phone=628...`,
+    )
+    return
   }
 
-  if (!phoneNumber) {
-    throw new Error('PAIRING_NUMBER is missing.')
-  }
-
-  const pairingCode = await sock.requestPairingCode(phoneNumber)
+  const pairingCode = await requestPairingCode(phoneNumber)
   logger.success(`Pairing code: ${pairingCode}`)
+}
+
+async function requestPairingCode(phoneNumber) {
+  const sock = runtime.sock
+  if (!sock) {
+    throw new Error('Socket is not ready yet.')
+  }
+
+  const sanitized = cleanNumber(phoneNumber || config.pairingNumber)
+  if (!sanitized) {
+    throw new Error('Phone number is required.')
+  }
+
+  if (sock.authState.creds.registered) {
+    runtime.registered = true
+    return 'already-registered'
+  }
+
+  const pairingCode = await sock.requestPairingCode(sanitized)
+  runtime.lastPairingCode = pairingCode
+  runtime.lastPairingRequestAt = new Date().toISOString()
+  return pairingCode
 }
 
 async function boot() {
@@ -63,10 +80,15 @@ async function boot() {
     printQRInTerminal: false,
     version,
   })
+  runtime.sock = sock
+  runtime.registered = Boolean(sock.authState.creds.registered)
 
   await ensurePairingCode(sock)
 
-  sock.ev.on('creds.update', saveCreds)
+  sock.ev.on('creds.update', (...args) => {
+    runtime.registered = Boolean(sock.authState.creds.registered)
+    return saveCreds(...args)
+  })
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update
@@ -84,6 +106,7 @@ async function boot() {
       state.connection = 'open'
       state.lastConnectedAt = new Date().toISOString()
       state.lastDisconnectReason = null
+      runtime.registered = true
       logger.success(`${config.botName} is connected.`)
     }
 
@@ -95,6 +118,7 @@ async function boot() {
 
       state.connection = 'closed'
       state.lastDisconnectReason = String(statusCode)
+      runtime.registered = Boolean(sock.authState.creds.registered)
 
       if (statusCode === DisconnectReason.loggedOut) {
         logger.error('Session logged out. Remove the session files and pair again.')
@@ -168,7 +192,7 @@ async function boot() {
   })
 }
 
-startHealthServer(config, state)
+startHealthServer(config, state, runtime, { requestPairingCode })
 
 boot().catch((error) => {
   logger.error(`Boot failed: ${error.message}`)

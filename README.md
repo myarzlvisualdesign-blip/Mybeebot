@@ -50,6 +50,10 @@ The configured live domain is:
 
 `https://mybeebot.myarzl-visualdesign.my.id`
 
+The public bot health proxy is exposed from the same domain at:
+
+`https://mybeebot.myarzl-visualdesign.my.id/api/bot-health`
+
 ## Commands included
 
 - `.menu`

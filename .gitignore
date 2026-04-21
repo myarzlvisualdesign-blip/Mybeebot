@@ -8,3 +8,5 @@ packages/bot/session/*
 !packages/bot/session/.gitkeep
 packages/bot/data/*
 !packages/bot/data/.gitkeep
+logs/
+ops/cloudflared/current-url.txt
