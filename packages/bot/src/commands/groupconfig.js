@@ -15,6 +15,7 @@ export default {
         `┃ Welcome Card: ${settings.welcome ? '✅ aktif' : '❌ mati'}`,
         `┃ Goodbye Card: ${settings.goodbye ? '✅ aktif' : '❌ mati'}`,
         `┃ Anti-link: ${settings.antiLink}`,
+        `┃ Anti-spam: ${settings.antiSpam ? '✅ aktif' : '❌ mati'}`,
         `┃ AI Reply: ${settings.aiReply ? '✅ aktif' : '❌ mati'}`,
         `┃ Auto-responder: ${settings.autoResponder ? '✅ aktif' : '❌ mati'}`,
         `┃ Jumlah Reply Auto: ${Object.keys(settings.autoReplies || {}).length}`,

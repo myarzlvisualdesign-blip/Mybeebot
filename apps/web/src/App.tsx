@@ -100,6 +100,8 @@ const commandDescriptions: Record<string, string> = {
   '.help': 'Ringkasan perintah yang aktif.',
   '.ping': 'Cek latency dan respons bot.',
   '.alive': 'Lihat identitas dan status bot.',
+  '.profile': 'Lihat profil singkat pengirim.',
+  '.stats': 'Lihat statistik runtime dan fitur bot.',
   '.owner': 'Tampilkan info owner.',
   '.repo': 'Buka repository project.',
   '.uptime': 'Lihat lama bot berjalan.',
@@ -121,6 +123,7 @@ const commandDescriptions: Record<string, string> = {
   '.tomp3': 'Ubah video atau audio menjadi MP3.',
   '.tovn': 'Ubah video atau audio menjadi voice note.',
   '.antilink': 'Atur proteksi link per grup.',
+  '.antispam': 'Atur penjaga anti-spam per grup.',
   '.autoresponder': 'Atur auto-responder per grup.',
   '.setreply': 'Simpan balasan otomatis.',
   '.delreply': 'Hapus balasan otomatis.',
@@ -134,6 +137,8 @@ const commandExamples: Record<string, string> = {
   '.help': '.help',
   '.ping': '.ping',
   '.alive': '.alive',
+  '.profile': '.profile',
+  '.stats': '.stats',
   '.close': '.close',
   '.demote': '.demote @user',
   '.goodbye': '.goodbye on',
@@ -143,6 +148,7 @@ const commandExamples: Record<string, string> = {
   '.ai': '.ai bikinkan caption promo kopi susu',
   '.aireply': '.aireply on',
   '.antilink': '.antilink warn',
+  '.antispam': '.antispam on',
   '.autoresponder': '.autoresponder on',
   '.delreply': '.delreply halo',
   '.owner': '.owner',
@@ -499,7 +505,7 @@ function App() {
   const normalizedPhone = normalizePhone(pairPhone)
   const isLinked = Boolean(botStatus?.registered)
   const isBotReady = isLinked && botStatus?.connection === 'open'
-  const starterCommands = ['.menu', '.ping', '.alive', '.owner']
+  const starterCommands = ['.menu', '.ping', '.alive', '.profile']
 
   const filteredCommands = activeCommands.filter((command) => {
     if (!searchNeedle) {

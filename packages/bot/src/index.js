@@ -40,6 +40,7 @@ const runtime = {
   resetScheduled: false,
   sock: null,
 }
+const antiSpamState = new Map()
 
 function extractContextInfo(payload) {
   if (!payload) {
@@ -100,6 +101,28 @@ function buildAiPrompt(body) {
     .replace(new RegExp(`^${config.botName}\\s*[:,-]?\\s*`, 'i'), '')
     .replace(/^bot\s*[:,-]?\s*/i, '')
     .trim()
+}
+
+function trackSpamActivity(chatJid, sender, isCommand) {
+  const key = `${chatJid}:${normalizeJid(sender)}`
+  const now = Date.now()
+  const existing = antiSpamState.get(key) || {
+    messages: [],
+    commands: [],
+    mutedUntil: 0,
+    lastNoticeAt: 0,
+  }
+
+  existing.messages = existing.messages.filter((stamp) => now - stamp < 10000)
+  existing.commands = existing.commands.filter((stamp) => now - stamp < 10000)
+
+  existing.messages.push(now)
+  if (isCommand) {
+    existing.commands.push(now)
+  }
+
+  antiSpamState.set(key, existing)
+  return existing
 }
 
 async function ensurePairingCode(sock) {
@@ -339,6 +362,46 @@ async function handleAutoAi({ body, message, reply, sock }) {
   return true
 }
 
+async function handleAntiSpam({ body, isCommand, message, owner, reply, sock }) {
+  const chatJid = getChatJid(message)
+  if (!chatJid.endsWith('@g.us') || !body) {
+    return false
+  }
+
+  const settings = groupSettings.get(chatJid)
+  if (!settings.antiSpam) {
+    return false
+  }
+
+  const sender = getSenderJid(message)
+  const { senderAdmin } = await getParticipantState(sock, chatJid, sender)
+  if (owner || senderAdmin) {
+    return false
+  }
+
+  const record = trackSpamActivity(chatJid, sender, isCommand)
+  const now = Date.now()
+
+  if (record.mutedUntil > now) {
+    if (now - record.lastNoticeAt > 10000) {
+      record.lastNoticeAt = now
+      await reply(`🚦 ${toMention(sender)} terlalu cepat kirim pesan. Coba lagi beberapa saat ya.`)
+    }
+    return true
+  }
+
+  if (record.messages.length >= 7 || record.commands.length >= 4) {
+    record.mutedUntil = now + 30000
+    record.lastNoticeAt = now
+    await reply(
+      `🚦 Anti-spam aktif. ${toMention(sender)} kena cooldown 30 detik karena kirim terlalu cepat.`,
+    )
+    return true
+  }
+
+  return false
+}
+
 async function boot() {
   await groupSettings.load()
   await registry.load()
@@ -439,6 +502,22 @@ async function boot() {
 
     const reply = async (text) =>
       sock.sendMessage(message.key.remoteJid, { text }, { quoted: message })
+
+    try {
+      const blockedBySpam = await handleAntiSpam({
+        body,
+        isCommand: body.startsWith(config.prefix),
+        message,
+        owner,
+        reply,
+        sock,
+      })
+      if (blockedBySpam) {
+        return
+      }
+    } catch (error) {
+      logger.warn(`Anti-spam gagal: ${error.message}`)
+    }
 
     if (body.startsWith(config.prefix)) {
       const commandLine = body.slice(config.prefix.length).trim()

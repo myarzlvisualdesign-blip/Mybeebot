@@ -5,6 +5,7 @@ const defaults = {
   welcome: false,
   goodbye: false,
   antiLink: 'off',
+  antiSpam: false,
   aiReply: false,
   autoResponder: false,
   autoReplies: {},
@@ -18,6 +19,7 @@ function normalizeSettings(value = {}) {
     ...defaults,
     ...value,
     antiLink: ['off', 'warn', 'kick'].includes(value.antiLink) ? value.antiLink : 'off',
+    antiSpam: Boolean(value.antiSpam),
     aiReply: Boolean(value.aiReply),
     autoResponder: Boolean(value.autoResponder),
     autoReplies: Object.fromEntries(
@@ -112,5 +114,9 @@ export class GroupSettingsStore {
 
     delete autoReplies[normalizedTrigger]
     return this.set(jid, { autoReplies })
+  }
+
+  list() {
+    return Object.entries(this.state.groups || {})
   }
 }
