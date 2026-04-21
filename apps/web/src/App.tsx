@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 
 type LiveStatus = {
@@ -26,6 +26,26 @@ type BotStatus = {
   lastQrAt?: string | null
 }
 
+type LiveMeta = {
+  name: string
+  repoUrl: string
+  upstreamUrl: string
+  deployment: string
+  botHealthProxy: string
+  botMetaProxy: string
+  botTunnelConfigured: boolean
+  note: string
+}
+
+type BotMeta = {
+  ok: boolean
+  bot: string
+  repoUrl: string
+  websiteUrl: string
+  healthUrl: string
+  localPairingUrl: string
+}
+
 type PairingResult = {
   ok: boolean
   phone?: string
@@ -50,7 +70,21 @@ type BotQrResult = {
   message?: string
 }
 
+type ActivityEntry = {
+  id: string
+  text: string
+  time: string
+  tone: 'info' | 'success' | 'error'
+}
+
+type InspectorResult = {
+  label: string
+  payload: string
+  tone: 'info' | 'success' | 'error'
+}
+
 const ADMIN_KEY_STORAGE = 'mybeebot-admin-key'
+const MAX_ACTIVITY = 10
 
 const commandDescriptions: Record<string, string> = {
   '.menu': 'Open the main control sheet.',
@@ -62,14 +96,54 @@ const commandDescriptions: Record<string, string> = {
   '.reload': 'Reload modules for the owner.',
 }
 
-const sidebarItems = [
-  { short: 'MB', label: 'Mybeebot', active: true },
-  { short: 'OV', label: 'Overview' },
-  { short: 'RT', label: 'Runtime' },
-  { short: 'CM', label: 'Commands' },
-  { short: 'PX', label: 'Proxy' },
-  { short: 'LG', label: 'Logs' },
-]
+const commandExamples: Record<string, string> = {
+  '.menu': '.menu',
+  '.help': '.help',
+  '.ping': '.ping',
+  '.alive': '.alive',
+  '.repo': '.repo',
+  '.echo': '.echo halo',
+  '.reload': '.reload',
+}
+
+const railItems = [
+  { short: 'OV', label: 'Overview', section: 'overview' },
+  { short: 'PR', label: 'Pairing', section: 'pairing' },
+  { short: 'CM', label: 'Commands', section: 'commands' },
+  { short: 'API', label: 'API', section: 'api' },
+  { short: 'LG', label: 'Activity', section: 'activity' },
+] as const
+
+const endpointCatalog = [
+  {
+    key: 'status',
+    label: 'Edge status',
+    method: 'GET',
+    path: '/api/status',
+    description: 'Cloudflare route, runtime, and command registry.',
+  },
+  {
+    key: 'meta',
+    label: 'Edge meta',
+    method: 'GET',
+    path: '/api/meta',
+    description: 'Deploy metadata and proxy configuration.',
+  },
+  {
+    key: 'bot-health',
+    label: 'Bot health',
+    method: 'GET',
+    path: '/api/bot-health',
+    description: 'Current bot socket state and pairing readiness.',
+  },
+  {
+    key: 'bot-meta',
+    label: 'Bot meta',
+    method: 'GET',
+    path: '/api/bot-meta',
+    description: 'Node runtime metadata behind the proxy.',
+  },
+] as const
 
 function formatUptime(seconds: number | undefined) {
   if (!seconds) {
@@ -84,6 +158,22 @@ function formatUptime(seconds: number | undefined) {
   }
 
   return `${minutes}m`
+}
+
+function formatClock(value: string | null | undefined) {
+  if (!value) {
+    return 'pending'
+  }
+
+  return new Date(value).toLocaleTimeString()
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return 'not yet'
+  }
+
+  return new Date(value).toLocaleString()
 }
 
 function getGreeting() {
@@ -113,6 +203,10 @@ function getProgress(connection?: string) {
     return 26
   }
 
+  if (connection === 'resetting') {
+    return 14
+  }
+
   return 18
 }
 
@@ -133,8 +227,11 @@ function normalizePhone(phone: string) {
 function App() {
   const [status, setStatus] = useState<LiveStatus | null>(null)
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
+  const [liveMeta, setLiveMeta] = useState<LiveMeta | null>(null)
+  const [botMeta, setBotMeta] = useState<BotMeta | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [botStatusError, setBotStatusError] = useState<string | null>(null)
+  const [metaError, setMetaError] = useState<string | null>(null)
   const [pairPhone, setPairPhone] = useState('087830300031')
   const [adminKey, setAdminKey] = useState(() => {
     if (typeof window === 'undefined') {
@@ -143,6 +240,8 @@ function App() {
 
     return window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? ''
   })
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeSection, setActiveSection] = useState('overview')
   const [pairingResult, setPairingResult] = useState<PairingResult | null>(null)
   const [pairingError, setPairingError] = useState<string | null>(null)
   const [resetNotice, setResetNotice] = useState<string | null>(null)
@@ -152,58 +251,132 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
   const [isLoadingQr, setIsLoadingQr] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [copyNotice, setCopyNotice] = useState<string | null>(null)
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [inspector, setInspector] = useState<InspectorResult | null>(null)
+  const [inspectingKey, setInspectingKey] = useState<string | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
 
-  async function loadStatus() {
+  const previousSnapshot = useRef<string>('')
+
+  const addActivity = useCallback((text: string, tone: ActivityEntry['tone']) => {
+    setActivity((current) => [
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+        text,
+        time: new Date().toISOString(),
+        tone,
+      },
+      ...current,
+    ].slice(0, MAX_ACTIVITY))
+  }, [])
+
+  async function copyText(value: string, label: string) {
+    if (!value) {
+      addActivity(`${label} is empty.`, 'error')
+      return
+    }
+
     try {
-      const response = await fetch('/api/status')
-      if (!response.ok) {
-        throw new Error(`Status request failed with ${response.status}`)
-      }
+      await navigator.clipboard.writeText(value)
+      setCopyNotice(`${label} copied`)
+      addActivity(`${label} copied to clipboard.`, 'success')
+      window.setTimeout(() => {
+        setCopyNotice((current) => (current === `${label} copied` ? null : current))
+      }, 2200)
+    } catch {
+      setCopyNotice(null)
+      addActivity(`Unable to copy ${label}.`, 'error')
+    }
+  }
 
-      const payload = (await response.json()) as LiveStatus
-      setStatus(payload)
+  function jumpToSection(section: string) {
+    setActiveSection(section)
+    document.getElementById(`section-${section}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
+
+  async function readJson<T>(url: string, init?: RequestInit) {
+    const response = await fetch(url, init)
+    const text = await response.text()
+    const payload = text ? (JSON.parse(text) as T & { message?: string }) : ({} as T)
+
+    if (!response.ok) {
+      const message =
+        typeof payload === 'object' && payload && 'message' in payload
+          ? String(payload.message || '')
+          : ''
+
+      throw new Error(message || `${url} failed with ${response.status}`)
+    }
+
+    return payload as T
+  }
+
+  const refreshAll = useCallback(async (options?: { announce?: boolean }) => {
+    setIsRefreshing(true)
+
+    const [statusResult, botStatusResult, liveMetaResult, botMetaResult] =
+      await Promise.allSettled([
+        readJson<LiveStatus>('/api/status'),
+        readJson<BotStatus>('/api/bot-health'),
+        readJson<LiveMeta>('/api/meta'),
+        readJson<BotMeta>('/api/bot-meta'),
+      ])
+
+    if (statusResult.status === 'fulfilled') {
+      setStatus(statusResult.value)
       setStatusError(null)
-    } catch (error) {
-      setStatusError(
-        error instanceof Error ? error.message : 'Unable to reach live status endpoint.',
-      )
+    } else {
+      setStatusError(statusResult.reason instanceof Error ? statusResult.reason.message : 'Unable to reach live status endpoint.')
     }
-  }
 
-  async function loadBotStatus() {
-    try {
-      const response = await fetch('/api/bot-health')
-      if (!response.ok) {
-        throw new Error(`Bot status request failed with ${response.status}`)
-      }
-
-      const payload = (await response.json()) as BotStatus
-      setBotStatus(payload)
+    if (botStatusResult.status === 'fulfilled') {
+      setBotStatus(botStatusResult.value)
       setBotStatusError(null)
-    } catch (error) {
-      setBotStatusError(
-        error instanceof Error ? error.message : 'Unable to reach bot health proxy.',
-      )
+    } else {
+      setBotStatusError(botStatusResult.reason instanceof Error ? botStatusResult.reason.message : 'Unable to reach bot health proxy.')
     }
-  }
+
+    if (liveMetaResult.status === 'fulfilled') {
+      setLiveMeta(liveMetaResult.value)
+      setMetaError(null)
+    } else {
+      setMetaError(liveMetaResult.reason instanceof Error ? liveMetaResult.reason.message : 'Unable to reach edge metadata.')
+    }
+
+    if (botMetaResult.status === 'fulfilled') {
+      setBotMeta(botMetaResult.value)
+      setMetaError(null)
+    } else if (liveMetaResult.status !== 'rejected') {
+      setMetaError(botMetaResult.reason instanceof Error ? botMetaResult.reason.message : 'Unable to reach bot metadata.')
+    }
+
+    setLastSyncedAt(new Date().toISOString())
+
+    if (options?.announce) {
+      addActivity('Dashboard synced from live endpoints.', 'info')
+    }
+
+    setIsRefreshing(false)
+  }, [addActivity])
 
   useEffect(() => {
     const refresh = () => {
-      void loadStatus()
-      void loadBotStatus()
+      void refreshAll()
     }
 
     const timeout = window.setTimeout(refresh, 0)
-
-    const interval = window.setInterval(() => {
-      refresh()
-    }, 8000)
+    const interval = window.setInterval(refresh, 8000)
 
     return () => {
       window.clearTimeout(timeout)
       window.clearInterval(interval)
     }
-  }, [])
+  }, [refreshAll])
 
   useEffect(() => {
     if (!adminKey) {
@@ -214,10 +387,38 @@ function App() {
     window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey)
   }, [adminKey])
 
+  useEffect(() => {
+    if (!status || !botStatus) {
+      return
+    }
+
+    const snapshot = [
+      status.status,
+      botStatus.connection,
+      botStatus.registered ? 'registered' : 'unregistered',
+      botStatus.lastDisconnectReason ?? 'none',
+    ].join('|')
+
+    if (!previousSnapshot.current) {
+      previousSnapshot.current = snapshot
+      addActivity('Dashboard connected to live bot runtime.', 'success')
+      return
+    }
+
+    if (previousSnapshot.current !== snapshot) {
+      previousSnapshot.current = snapshot
+      addActivity(
+        `Runtime changed to ${botStatus.connection}. Registered: ${botStatus.registered ? 'yes' : 'no'}.`,
+        botStatus.connection === 'open' ? 'success' : 'info',
+      )
+    }
+  }, [status, botStatus, addActivity])
+
   const greeting = getGreeting()
+  const searchNeedle = searchQuery.trim().toLowerCase()
   const edgeProgress = status?.status === 'live' ? 100 : 54
   const runtimeProgress = getProgress(botStatus?.connection)
-  const pairingProgress = botStatus?.registered ? 100 : 34
+  const pairingProgress = botStatus?.registered ? 100 : botStatus?.qrAvailable ? 62 : 34
   const commandProgress = botStatus?.commandCount
     ? Math.min(100, 44 + botStatus.commandCount * 8)
     : 52
@@ -228,6 +429,30 @@ function App() {
     ? status.commands
     : Object.keys(commandDescriptions)
 
+  const filteredCommands = activeCommands.filter((command) => {
+    if (!searchNeedle) {
+      return true
+    }
+
+    return (
+      command.toLowerCase().includes(searchNeedle) ||
+      String(commandDescriptions[command] || '').toLowerCase().includes(searchNeedle) ||
+      String(commandExamples[command] || '').toLowerCase().includes(searchNeedle)
+    )
+  })
+
+  const filteredEndpoints = endpointCatalog.filter((endpoint) => {
+    if (!searchNeedle) {
+      return true
+    }
+
+    return (
+      endpoint.label.toLowerCase().includes(searchNeedle) ||
+      endpoint.path.toLowerCase().includes(searchNeedle) ||
+      endpoint.description.toLowerCase().includes(searchNeedle)
+    )
+  })
+
   const workflowRows = [
     {
       label: 'Edge worker bundle',
@@ -237,7 +462,7 @@ function App() {
     },
     {
       label: 'Bot health proxy',
-      detail: '/api/bot-health',
+      detail: liveMeta?.botHealthProxy ?? '/api/bot-health',
       percent: botStatus ? 100 : 40,
       state: botStatus ? 'Live' : 'Pending',
     },
@@ -248,60 +473,158 @@ function App() {
       state: botStatus?.connection ?? 'Queueing',
     },
     {
-      label: 'Device pairing',
-      detail: botStatus?.registered ? 'WhatsApp linked' : 'Awaiting pair code',
+      label: 'Pairing surfaces',
+      detail: botStatus?.qrAvailable ? 'Code + QR ready' : 'Awaiting pair surface',
       percent: pairingProgress,
-      state: botStatus?.registered ? 'Ready' : 'Manual step',
+      state: botStatus?.registered ? 'Ready' : 'Action needed',
     },
   ]
 
-  const systemFeed = [
-    `Deploy state: ${status?.status ?? 'checking'}`,
-    `Proxy health: ${botStatus ? 'reachable' : 'pending'}`,
-    `Last disconnect: ${botStatus?.lastDisconnectReason ?? 'none'}`,
-    `Pairing surface: website admin gate`,
+  const pairingChecklist = [
+    {
+      label: 'Unlock dashboard with admin key',
+      done: Boolean(adminKey),
+    },
+    {
+      label: 'Runtime proxy is reachable',
+      done: Boolean(botStatus && botStatus.connection !== 'booting'),
+    },
+    {
+      label: 'Generate code or load QR',
+      done: Boolean(pairingResult?.code || botStatus?.qrAvailable || qrImage),
+    },
+    {
+      label: 'WhatsApp linked',
+      done: Boolean(botStatus?.registered),
+    },
   ]
 
-  async function handleGeneratePairingCode() {
-    setIsGenerating(true)
-    setPairingError(null)
-    setResetNotice(null)
+  const runtimeFeed = [
+    `Edge route: ${status?.status ?? 'checking'}`,
+    `Socket: ${botStatus?.connection ?? 'booting'}`,
+    `Registered: ${botStatus?.registered ? 'yes' : 'no'}`,
+    `QR available: ${botStatus?.qrAvailable ? 'yes' : 'no'}`,
+    `Last pairing request: ${formatClock(botStatus?.lastPairingRequestAt)}`,
+    `Last disconnect: ${botStatus?.lastDisconnectReason ?? 'none'}`,
+  ].filter((entry) => !searchNeedle || entry.toLowerCase().includes(searchNeedle))
+
+  const controlLinks = [
+    {
+      label: 'Website',
+      href: botMeta?.websiteUrl ?? 'https://mybeebot.myarzl-visualdesign.my.id',
+    },
+    {
+      label: 'Repo',
+      href: liveMeta?.repoUrl ?? 'https://github.com/myarzlvisualdesign-blip/Mybeebot',
+    },
+    {
+      label: 'Bot health',
+      href: liveMeta?.botHealthProxy ?? 'https://mybeebot.myarzl-visualdesign.my.id/api/bot-health',
+    },
+    {
+      label: 'Bot meta',
+      href: liveMeta?.botMetaProxy ?? 'https://mybeebot.myarzl-visualdesign.my.id/api/bot-meta',
+    },
+  ].filter((link) => !searchNeedle || `${link.label} ${link.href}`.toLowerCase().includes(searchNeedle))
+
+  const totalMatches = filteredCommands.length + filteredEndpoints.length + runtimeFeed.length + controlLinks.length
+
+  async function inspectEndpoint(
+    key: string,
+    label: string,
+    path: string,
+    init?: RequestInit,
+  ) {
+    setInspectingKey(key)
 
     try {
-      const response = await fetch('/api/bot-pairing', {
+      const payload = await readJson<Record<string, unknown>>(path, init)
+      setInspector({
+        label,
+        payload: JSON.stringify(payload, null, 2),
+        tone: 'success',
+      })
+      addActivity(`${label} inspected from dashboard.`, 'info')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Endpoint inspection failed.'
+      setInspector({
+        label,
+        payload: message,
+        tone: 'error',
+      })
+      addActivity(`${label} inspection failed.`, 'error')
+    } finally {
+      setInspectingKey(null)
+    }
+  }
+
+  async function handleGeneratePairingCode() {
+    const phone = normalizePhone(pairPhone)
+    if (!phone) {
+      setPairingError('Phone number is required.')
+      return
+    }
+
+    if (!adminKey) {
+      setPairingError('Admin key is required.')
+      return
+    }
+
+    setIsGenerating(true)
+    setPairingError(null)
+    setQrError(null)
+    setResetNotice(null)
+    setActiveSection('pairing')
+
+    try {
+      const payload = await readJson<PairingResult>('/api/bot-pairing', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          phone: normalizePhone(pairPhone),
+          phone,
           adminKey,
         }),
       })
 
-      const payload = (await response.json()) as PairingResult
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || `Pairing request failed with ${response.status}`)
-      }
-
       setPairingResult(payload)
-      await loadBotStatus()
+      setInspector({
+        label: 'POST /api/bot-pairing',
+        payload: JSON.stringify(payload, null, 2),
+        tone: 'success',
+      })
+      addActivity(`Pairing code generated for ${payload.phone || phone}.`, 'success')
+      await refreshAll()
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to generate a pairing code.'
+
       setPairingResult(null)
-      setPairingError(
-        error instanceof Error ? error.message : 'Unable to generate a pairing code.',
-      )
+      setPairingError(message)
+      setInspector({
+        label: 'POST /api/bot-pairing',
+        payload: message,
+        tone: 'error',
+      })
+      addActivity('Pairing code generation failed.', 'error')
     } finally {
       setIsGenerating(false)
     }
   }
 
   async function handleResetSession() {
+    if (!adminKey) {
+      setPairingError('Admin key is required.')
+      return
+    }
+
     setIsResetting(true)
     setPairingError(null)
+    setQrError(null)
 
     try {
-      const response = await fetch('/api/bot-reset', {
+      const payload = await readJson<ResetResult>('/api/bot-reset', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -311,32 +634,49 @@ function App() {
         }),
       })
 
-      const payload = (await response.json()) as ResetResult
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || `Reset request failed with ${response.status}`)
-      }
-
       setPairingResult(null)
-      setResetNotice(payload.message || 'Session cleared. Wait a few seconds, then generate a fresh code.')
+      setQrImage(null)
+      setQrMeta(null)
+      setResetNotice(payload.message || 'Session cleared. Wait a few seconds, then try again.')
+      setInspector({
+        label: 'POST /api/bot-reset',
+        payload: JSON.stringify(payload, null, 2),
+        tone: 'success',
+      })
+      addActivity('Bot session reset from dashboard.', 'success')
       window.setTimeout(() => {
-        void loadBotStatus()
+        void refreshAll({ announce: true })
       }, 3500)
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to reset bot session.'
+
       setResetNotice(null)
-      setPairingError(error instanceof Error ? error.message : 'Unable to reset bot session.')
+      setPairingError(message)
+      setInspector({
+        label: 'POST /api/bot-reset',
+        payload: message,
+        tone: 'error',
+      })
+      addActivity('Bot session reset failed.', 'error')
     } finally {
       setIsResetting(false)
     }
   }
 
   async function handleLoadQr() {
+    if (!adminKey) {
+      setQrError('Admin key is required.')
+      return
+    }
+
     setIsLoadingQr(true)
     setPairingError(null)
     setQrError(null)
     setResetNotice(null)
+    setActiveSection('pairing')
 
     try {
-      const response = await fetch('/api/bot-qr', {
+      const payload = await readJson<BotQrResult>('/api/bot-qr', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -345,11 +685,6 @@ function App() {
           adminKey,
         }),
       })
-
-      const payload = (await response.json()) as BotQrResult
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || `QR request failed with ${response.status}`)
-      }
 
       if (!payload.qr) {
         throw new Error(payload.message || 'QR is not available yet.')
@@ -366,14 +701,38 @@ function App() {
 
       setQrImage(image)
       setQrMeta(payload)
+      setInspector({
+        label: 'POST /api/bot-qr',
+        payload: JSON.stringify(payload, null, 2),
+        tone: 'success',
+      })
+      addActivity('Desktop QR loaded from dashboard.', 'success')
+      await refreshAll()
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load QR.'
+
       setQrImage(null)
       setQrMeta(null)
-      setQrError(error instanceof Error ? error.message : 'Unable to load QR.')
+      setQrError(message)
+      setInspector({
+        label: 'POST /api/bot-qr',
+        payload: message,
+        tone: 'error',
+      })
+      addActivity('Desktop QR load failed.', 'error')
     } finally {
       setIsLoadingQr(false)
     }
   }
+
+  const pairingMessage =
+    pairingError || botStatusError || qrError
+      ? pairingError || botStatusError || qrError
+      : resetNotice
+        ? resetNotice
+      : pairingResult?.code
+        ? `Use code ${pairingResult.code} immediately in WhatsApp Linked Devices.`
+        : 'Use Generate Pairing Code for phone-number linking, or Load QR if desktop scan is easier.'
 
   return (
     <div className="dashboard-shell">
@@ -383,14 +742,18 @@ function App() {
 
       <div className="dashboard-frame">
         <aside className="side-rail reveal">
-          <div className="brand-chip">MB</div>
+          <button type="button" className="brand-chip" onClick={() => jumpToSection('overview')}>
+            MB
+          </button>
 
           <div className="rail-stack">
-            {sidebarItems.map((item) => (
+            {railItems.map((item) => (
               <button
-                key={item.label}
+                key={item.section}
                 type="button"
-                className={`rail-button${item.active ? ' active' : ''}`}
+                className={`rail-button${activeSection === item.section ? ' active' : ''}`}
+                onClick={() => jumpToSection(item.section)}
+                title={item.label}
               >
                 <span>{item.short}</span>
               </button>
@@ -405,24 +768,42 @@ function App() {
             <div>
               <p className="topbar-label">Dashboard</p>
               <h1>Mybeebot Tools</h1>
+              <p className="search-meta">
+                {totalMatches} live matches
+                {lastSyncedAt ? ` • synced ${formatClock(lastSyncedAt)}` : ''}
+                {copyNotice ? ` • ${copyNotice}` : ''}
+              </p>
             </div>
 
             <div className="search-shell">
               <span className="search-icon" />
-              <span className="search-copy">Search command, tunnel, pair code</span>
-              <kbd>shift f</kbd>
+              <input
+                className="search-input"
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search command, endpoint, runtime state"
+              />
+              <button
+                type="button"
+                className="sync-button"
+                onClick={() => void refreshAll({ announce: true })}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? 'Syncing...' : 'Refresh'}
+              </button>
             </div>
           </header>
 
           <div className="workspace-grid">
             <main className="main-column">
-              <article className="panel hero-panel reveal reveal-delay-2">
+              <article id="section-overview" className="panel hero-panel reveal reveal-delay-2">
                 <div className="hero-copy">
                   <p className="eyebrow">Good {greeting},</p>
                   <h2>Mybeebot Control</h2>
                   <p className="hero-text">
-                    Tool dashboard with live Cloudflare edge status, bot proxy health,
-                    command matrix, and pairing readiness in one glass workspace.
+                    Live dashboard for pairing, QR fallback, command lookup, endpoint
+                    inspection, and runtime monitoring from the same Cloudflare domain.
                   </p>
                 </div>
 
@@ -435,6 +816,9 @@ function App() {
                     <span className="hero-chip">{status?.status ?? 'syncing edge'}</span>
                     <span className="hero-chip">
                       {botStatus?.registered ? 'device paired' : 'pairing pending'}
+                    </span>
+                    <span className="hero-chip">
+                      {botStatus?.qrAvailable ? 'qr ready' : 'qr waiting'}
                     </span>
                   </div>
                 </div>
@@ -493,12 +877,22 @@ function App() {
                   </div>
                 </article>
 
-                <article className="panel pairing-panel reveal reveal-delay-4">
+                <article
+                  id="section-pairing"
+                  className="panel pairing-panel reveal reveal-delay-4"
+                >
                   <div className="panel-head">
                     <div>
                       <p className="tiny-label">Pair device</p>
                       <h3>Website pairing panel</h3>
                     </div>
+                    <button
+                      type="button"
+                      className="ghost-action"
+                      onClick={() => void copyText(normalizePhone(pairPhone), 'Normalized phone')}
+                    >
+                      Copy phone
+                    </button>
                   </div>
 
                   <div className="pairing-form">
@@ -530,7 +924,7 @@ function App() {
                         onClick={handleGeneratePairingCode}
                         disabled={isGenerating || isResetting || isLoadingQr}
                       >
-                        {isGenerating ? 'Generating...' : 'Generate Pairing Code'}
+                        {isGenerating ? 'Generating...' : 'Generate Code'}
                       </button>
 
                       <button
@@ -569,7 +963,7 @@ function App() {
                     </div>
                     <div className="mini-stat">
                       <span>Proxy</span>
-                      <strong>Cloudflare</strong>
+                      <strong>{liveMeta?.deployment ?? 'cloudflare'}</strong>
                     </div>
                     <div className="mini-stat">
                       <span>Device</span>
@@ -578,17 +972,40 @@ function App() {
                   </div>
 
                   <div className="pairing-result">
-                    <span>Latest code</span>
+                    <div className="result-head">
+                      <span>Latest code</span>
+                      {pairingResult?.code ? (
+                        <button
+                          type="button"
+                          className="ghost-action"
+                          onClick={() => void copyText(pairingResult.code || '', 'Pairing code')}
+                        >
+                          Copy code
+                        </button>
+                      ) : null}
+                    </div>
                     <strong>{pairingResult?.code ?? '--------'}</strong>
                     <small>
                       {pairingResult?.requestedAt
-                        ? `Generated ${new Date(pairingResult.requestedAt).toLocaleTimeString()}`
+                        ? `Generated ${formatDateTime(pairingResult.requestedAt)}`
                         : 'Generate a fresh code, then enter it in WhatsApp Linked Devices.'}
                     </small>
                   </div>
 
                   <div className="qr-result">
-                    <span>Desktop QR fallback</span>
+                    <div className="result-head">
+                      <span>Desktop QR fallback</span>
+                      {qrImage ? (
+                        <button
+                          type="button"
+                          className="ghost-action"
+                          onClick={handleLoadQr}
+                          disabled={isLoadingQr}
+                        >
+                          Refresh QR
+                        </button>
+                      ) : null}
+                    </div>
                     {qrImage ? (
                       <>
                         <div className="qr-frame">
@@ -596,8 +1013,8 @@ function App() {
                         </div>
                         <small>
                           {qrMeta?.generatedAt
-                            ? `QR updated ${new Date(qrMeta.generatedAt).toLocaleTimeString()}`
-                            : 'Open this dashboard on a laptop, then scan with Linked Devices on your phone.'}
+                            ? `QR updated ${formatDateTime(qrMeta.generatedAt)}`
+                            : 'Open this dashboard on a laptop, then scan from Linked Devices on your phone.'}
                         </small>
                       </>
                     ) : (
@@ -608,19 +1025,23 @@ function App() {
                     )}
                   </div>
 
-                  <div className="pairing-note">
-                    {pairingError || botStatusError || qrError
-                      ? pairingError || botStatusError || qrError
-                      : resetNotice
-                        ? resetNotice
-                      : pairingResult?.code
-                        ? `Use code ${pairingResult.code} immediately in WhatsApp Linked Devices.`
-                        : 'This panel can generate a fresh code from the website, but only after you unlock it with the admin key.'}
+                  <div className="checklist">
+                    {pairingChecklist.map((item) => (
+                      <div key={item.label} className={`check-item${item.done ? ' done' : ''}`}>
+                        <span className="check-dot" />
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
                   </div>
+
+                  <div className="pairing-note">{pairingMessage}</div>
                 </article>
               </div>
 
-              <article className="panel command-panel reveal reveal-delay-4">
+              <article
+                id="section-commands"
+                className="panel command-panel reveal reveal-delay-4"
+              >
                 <div className="panel-head">
                   <div>
                     <p className="tiny-label">Command matrix</p>
@@ -628,7 +1049,7 @@ function App() {
                   </div>
                   <a
                     className="ghost-link"
-                    href="https://github.com/myarzlvisualdesign-blip/Mybeebot"
+                    href={liveMeta?.repoUrl ?? 'https://github.com/myarzlvisualdesign-blip/Mybeebot'}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -637,12 +1058,116 @@ function App() {
                 </div>
 
                 <div className="command-grid">
-                  {activeCommands.map((command) => (
-                    <article key={command} className="command-tile">
-                      <strong>{command}</strong>
-                      <p>{commandDescriptions[command] ?? 'Core command loaded in runtime.'}</p>
-                    </article>
-                  ))}
+                  {filteredCommands.length ? (
+                    filteredCommands.map((command) => (
+                      <article key={command} className="command-tile">
+                        <div className="command-head">
+                          <strong>{command}</strong>
+                          <button
+                            type="button"
+                            className="command-action"
+                            onClick={() =>
+                              void copyText(
+                                commandExamples[command] ?? command,
+                                `${command} example`,
+                              )
+                            }
+                          >
+                            copy
+                          </button>
+                        </div>
+                        <p>{commandDescriptions[command] ?? 'Core command loaded in runtime.'}</p>
+                        <code className="command-example">
+                          {commandExamples[command] ?? command}
+                        </code>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      No command matches <strong>{searchQuery}</strong>.
+                    </div>
+                  )}
+                </div>
+              </article>
+
+              <article id="section-api" className="panel api-panel reveal reveal-delay-4">
+                <div className="panel-head">
+                  <div>
+                    <p className="tiny-label">API explorer</p>
+                    <h3>Inspect live endpoints</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost-action"
+                    onClick={() => void inspectEndpoint('bot-qr', 'POST /api/bot-qr', '/api/bot-qr', {
+                      method: 'POST',
+                      headers: {
+                        'content-type': 'application/json',
+                      },
+                      body: JSON.stringify({ adminKey }),
+                    })}
+                    disabled={!adminKey || inspectingKey === 'bot-qr'}
+                  >
+                    {inspectingKey === 'bot-qr' ? 'Inspecting...' : 'Inspect QR'}
+                  </button>
+                </div>
+
+                <div className="api-grid">
+                  {filteredEndpoints.length ? (
+                    filteredEndpoints.map((endpoint) => (
+                      <article key={endpoint.key} className="api-card">
+                        <div className="api-head">
+                          <strong>{endpoint.label}</strong>
+                          <span className="api-method">{endpoint.method}</span>
+                        </div>
+                        <p>{endpoint.description}</p>
+                        <code>{endpoint.path}</code>
+                        <div className="api-actions">
+                          <button
+                            type="button"
+                            className="command-action"
+                            onClick={() =>
+                              void inspectEndpoint(
+                                endpoint.key,
+                                `${endpoint.method} ${endpoint.path}`,
+                                endpoint.path,
+                              )
+                            }
+                            disabled={inspectingKey === endpoint.key}
+                          >
+                            {inspectingKey === endpoint.key ? 'Testing...' : 'Test'}
+                          </button>
+                          <button
+                            type="button"
+                            className="command-action secondary"
+                            onClick={() => void copyText(endpoint.path, `${endpoint.path} path`)}
+                          >
+                            copy path
+                          </button>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      No endpoint matches <strong>{searchQuery}</strong>.
+                    </div>
+                  )}
+                </div>
+
+                <div className={`json-panel${inspector?.tone === 'error' ? ' error' : ''}`}>
+                  <div className="result-head">
+                    <span>{inspector?.label ?? 'Latest endpoint response'}</span>
+                    {inspector ? (
+                      <button
+                        type="button"
+                        className="ghost-action"
+                        onClick={() => void copyText(inspector.payload, 'Inspector payload')}
+                      >
+                        Copy JSON
+                      </button>
+                    ) : null}
+                  </div>
+                  <pre>{inspector?.payload ?? 'Run Test on any endpoint to inspect the live JSON response here.'}</pre>
                 </div>
               </article>
             </main>
@@ -663,11 +1188,7 @@ function App() {
                 <ul className="detail-list">
                   <li>{status?.domain ?? 'waiting for domain'}</li>
                   <li>{status?.runtime ?? 'Worker static assets'}</li>
-                  <li>
-                    {status?.edgeServedAt
-                      ? `Updated ${new Date(status.edgeServedAt).toLocaleTimeString()}`
-                      : 'Waiting for edge ping'}
-                  </li>
+                  <li>{lastSyncedAt ? `Synced ${formatDateTime(lastSyncedAt)}` : 'Waiting for edge ping'}</li>
                 </ul>
               </article>
 
@@ -675,41 +1196,75 @@ function App() {
                 <p className="tiny-label">Runtime feed</p>
                 <h3>System notes</h3>
                 <ul className="feed-list">
-                  {systemFeed.map((entry) => (
-                    <li key={entry}>{entry}</li>
-                  ))}
+                  {runtimeFeed.length ? (
+                    runtimeFeed.map((entry) => <li key={entry}>{entry}</li>)
+                  ) : (
+                    <li>No runtime note matches the current search.</li>
+                  )}
                 </ul>
               </article>
 
               <article className="panel side-card reveal reveal-delay-4">
                 <p className="tiny-label">Direct links</p>
                 <h3>Control paths</h3>
-                <a
-                  className="endpoint-link"
-                  href="https://mybeebot.myarzl-visualdesign.my.id/api/bot-health"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  /api/bot-health
-                </a>
-                <a
-                  className="endpoint-link"
-                  href="https://mybeebot.myarzl-visualdesign.my.id/api/bot-meta"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  /api/bot-meta
-                </a>
+                {controlLinks.length ? (
+                  controlLinks.map((link) => (
+                    <div key={link.href} className="endpoint-row">
+                      <a className="endpoint-link" href={link.href} target="_blank" rel="noreferrer">
+                        <span>{link.label}</span>
+                        <small>{link.href}</small>
+                      </a>
+                      <button
+                        type="button"
+                        className="endpoint-copy"
+                        onClick={() => void copyText(link.href, `${link.label} link`)}
+                      >
+                        copy
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state compact">No link matches the current search.</div>
+                )}
+              </article>
+
+              <article
+                id="section-activity"
+                className="panel side-card reveal reveal-delay-4 activity-panel"
+              >
+                <p className="tiny-label">Activity log</p>
+                <h3>Recent actions</h3>
+                <div className="activity-list">
+                  {activity.length ? (
+                    activity.map((entry) => (
+                      <div key={entry.id} className={`activity-item ${entry.tone}`}>
+                        <span className="activity-time">{formatClock(entry.time)}</span>
+                        <p>{entry.text}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-state compact">
+                      No dashboard action yet. Try Refresh, Test endpoint, Generate Code, Load QR, or copy a command.
+                    </div>
+                  )}
+                </div>
               </article>
 
               <article className="panel status-strip reveal reveal-delay-4">
-                <span className="status-led" />
+                <span
+                  className={`status-led${statusError || botStatusError || metaError ? ' offline' : ''}`}
+                />
                 <div>
-                  <strong>Live proxy online</strong>
+                  <strong>
+                    {statusError || botStatusError || metaError
+                      ? 'Live surface needs attention'
+                      : 'Live proxy online'}
+                  </strong>
                   <p>
-                    {statusError
-                      ? statusError
-                      : 'Cloudflare edge and runtime proxy are responding from the same domain.'}
+                    {statusError || botStatusError || metaError
+                      ? statusError || botStatusError || metaError
+                      : liveMeta?.note ||
+                        'Cloudflare edge and runtime proxy are responding from the same domain.'}
                   </p>
                 </div>
               </article>
