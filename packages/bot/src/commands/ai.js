@@ -9,16 +9,18 @@ export default {
   async execute({ args, config, message, reply, sock }) {
     const prompt = args.join(' ').trim()
     if (!prompt) {
-      await reply(`Contoh: ${config.prefix}ai tolong buat caption promosi singkat`)
+      await reply(`🤖 Contoh: ${config.prefix}ai tolong buat caption promosi singkat`)
       return
     }
 
     if (!aiIsConfigured(config)) {
       await reply(
-        'AI belum aktif. Isi AI_API_KEY, AI_BASE_URL, dan AI_MODEL di konfigurasi bot dulu.',
+        '⚠️ AI belum aktif. Isi AI_API_KEY, AI_BASE_URL, dan AI_MODEL di konfigurasi bot dulu.',
       )
       return
     }
+
+    await reply('🤖 AI sedang berpikir, tunggu sebentar...')
 
     const chatJid = getChatJid(message)
     const sender = getSenderJid(message)
@@ -35,6 +37,6 @@ export default {
       ].join('\n'),
     })
 
-    await reply(result)
+    await reply(`🤖 *Jawaban AI*\n\n${result}`)
   },
 }

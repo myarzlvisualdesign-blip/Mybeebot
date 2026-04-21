@@ -6,7 +6,7 @@ export default {
   category: 'media',
   description: 'Buat stiker dari gambar atau video maksimal 10 detik.',
   async execute({ config, message, reply, sock }) {
-    await reply('Sedang membuat stiker...')
+    await reply('🧩 Sedang membuat stiker...')
     const sticker = await makeStickerFromMessage({
       config,
       message,

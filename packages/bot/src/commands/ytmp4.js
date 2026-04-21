@@ -8,11 +8,11 @@ export default {
   async execute({ args, config, message, reply, sock }) {
     const url = args[0]
     if (!url) {
-      await reply(`Contoh: ${config.prefix}ytmp4 https://youtu.be/xxxx`)
+      await reply(`🎬 Contoh: ${config.prefix}ytmp4 https://youtu.be/xxxx`)
       return
     }
 
-    await reply('Sedang mengunduh video. Tunggu sebentar...')
+    await reply('🎬 Sedang mengunduh video. Tunggu sebentar...')
     const result = await downloadWithYtDlp({
       config,
       mode: 'video',

@@ -1,9 +1,16 @@
 export default {
   name: 'repo',
-  aliases: ['sc', 'source'],
+  aliases: ['sc', 'source', 'script'],
   category: 'inti',
   description: 'Kirim URL repository project.',
   async execute({ config, reply }) {
-    await reply(`Repo ${config.botName}: ${config.repoUrl}`)
+    await reply(
+      [
+        '╭━〔 📦 REPOSITORY 〕━⬣',
+        `┃ Nama: ${config.botName}`,
+        `┃ URL: ${config.repoUrl}`,
+        '╰━━━━━━━━━━━━━━━━⬣',
+      ].join('\n'),
+    )
   },
 }

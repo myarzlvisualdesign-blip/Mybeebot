@@ -28,13 +28,13 @@ export default {
 
     if (!parsed) {
       await reply(
-        `Contoh: ${config.prefix}setreply halo|Halo juga, ada yang bisa dibantu?`,
+        `💬 Contoh: ${config.prefix}setreply halo|Halo juga, ada yang bisa dibantu?`,
       )
       return
     }
 
     const context = await ensureGroupAdmin(sock, message, config)
     await groupSettings.setAutoReply(context.jid, parsed.trigger, parsed.response)
-    await reply(`Auto-responder disimpan untuk keyword *${parsed.trigger}*.`)
+    await reply(`💬 Auto-responder disimpan untuk keyword *${parsed.trigger}*.`)
   },
 }

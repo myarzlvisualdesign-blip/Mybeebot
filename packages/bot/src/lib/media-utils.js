@@ -112,6 +112,52 @@ function getMediaCarrier(message) {
   return null
 }
 
+function inferExtension(media) {
+  const mime = String(media?.node?.mimetype || '').toLowerCase()
+
+  if (media?.type === 'sticker') {
+    return 'webp'
+  }
+
+  if (media?.type === 'video') {
+    return mime.includes('quicktime') ? 'mov' : 'mp4'
+  }
+
+  if (media?.type === 'audio') {
+    if (mime.includes('mpeg')) {
+      return 'mp3'
+    }
+
+    if (mime.includes('aac')) {
+      return 'aac'
+    }
+
+    if (mime.includes('wav')) {
+      return 'wav'
+    }
+
+    if (mime.includes('ogg')) {
+      return 'ogg'
+    }
+
+    return 'm4a'
+  }
+
+  if (media?.type === 'image') {
+    if (mime.includes('png')) {
+      return 'png'
+    }
+
+    if (mime.includes('webp')) {
+      return 'webp'
+    }
+
+    return 'jpg'
+  }
+
+  return 'bin'
+}
+
 async function ensureDir(directory) {
   await fs.mkdir(directory, { recursive: true })
 }
@@ -143,6 +189,57 @@ async function runBinary(command, args, options = {}) {
   return stdout
 }
 
+export async function prepareMediaInput({
+  config,
+  message,
+  sock,
+  label = 'media',
+  allowedTypes = [],
+}) {
+  const carrier = getMediaCarrier(message)
+  if (!carrier) {
+    throw new Error('Balas atau kirim media dulu sebelum memakai perintah ini.')
+  }
+
+  const media = findMediaNode(carrier)
+  if (!media) {
+    throw new Error('Media tidak ditemukan di pesan tersebut.')
+  }
+
+  if (allowedTypes.length && !allowedTypes.includes(media.type)) {
+    throw new Error(`Media yang didukung: ${allowedTypes.join(', ')}.`)
+  }
+
+  const jobDir = await createJobDir(config.tempDir, label)
+  const extension = inferExtension(media)
+  const inputPath = path.join(jobDir, `source.${extension}`)
+
+  try {
+    const buffer = await downloadMediaMessage(
+      carrier,
+      'buffer',
+      {},
+      {
+        reuploadRequest: sock.updateMediaMessage,
+        logger,
+      },
+    )
+
+    await fs.writeFile(inputPath, buffer)
+
+    return {
+      carrier,
+      media,
+      buffer,
+      jobDir,
+      inputPath,
+    }
+  } catch (error) {
+    await cleanupJob(jobDir)
+    throw error
+  }
+}
+
 export async function probeDurationSeconds(filePath, config) {
   if (!config.ffprobePath) {
     return null
@@ -167,35 +264,16 @@ export async function probeDurationSeconds(filePath, config) {
 }
 
 export async function makeStickerFromMessage({ config, message, sock }) {
-  const carrier = getMediaCarrier(message)
-  if (!carrier) {
-    throw new Error('Kirim atau balas gambar/video dulu, lalu ketik .stiker')
-  }
-
-  const media = findMediaNode(carrier)
-  if (!media || !['image', 'video', 'sticker'].includes(media.type)) {
-    throw new Error('Media untuk stiker harus berupa gambar, video, atau stiker.')
-  }
-
-  const jobDir = await createJobDir(config.tempDir, 'sticker')
-  const inputExt =
-    media.type === 'video' ? 'mp4' : media.type === 'sticker' ? 'webp' : 'jpg'
-  const inputPath = path.join(jobDir, `source.${inputExt}`)
+  const { media, jobDir, inputPath } = await prepareMediaInput({
+    config,
+    message,
+    sock,
+    label: 'sticker',
+    allowedTypes: ['image', 'video', 'sticker'],
+  })
   const outputPath = path.join(jobDir, 'result.webp')
 
   try {
-    const buffer = await downloadMediaMessage(
-      carrier,
-      'buffer',
-      {},
-      {
-        reuploadRequest: sock.updateMediaMessage,
-        logger,
-      },
-    )
-
-    await fs.writeFile(inputPath, buffer)
-
     if (media.type === 'video') {
       const duration = media.node?.seconds || (await probeDurationSeconds(inputPath, config))
       if (duration && duration > 10) {
@@ -252,6 +330,84 @@ export async function makeStickerFromMessage({ config, message, sock }) {
     return await fs.readFile(outputPath)
   } finally {
     await cleanupJob(jobDir)
+  }
+}
+
+export async function convertMediaToMp3({ config, message, sock }) {
+  const prepared = await prepareMediaInput({
+    config,
+    message,
+    sock,
+    label: 'mp3',
+    allowedTypes: ['audio', 'video'],
+  })
+  const outputPath = path.join(prepared.jobDir, 'result.mp3')
+
+  try {
+    await runBinary(
+      config.ffmpegPath,
+      [
+        '-y',
+        '-i',
+        prepared.inputPath,
+        '-vn',
+        '-ac',
+        '2',
+        '-ar',
+        '44100',
+        '-b:a',
+        '192k',
+        outputPath,
+      ],
+      { timeout: 120000 },
+    )
+
+    return {
+      ...prepared,
+      outputPath,
+    }
+  } catch (error) {
+    await cleanupJob(prepared.jobDir)
+    throw error
+  }
+}
+
+export async function convertMediaToVoiceNote({ config, message, sock }) {
+  const prepared = await prepareMediaInput({
+    config,
+    message,
+    sock,
+    label: 'vn',
+    allowedTypes: ['audio', 'video'],
+  })
+  const outputPath = path.join(prepared.jobDir, 'result.ogg')
+
+  try {
+    await runBinary(
+      config.ffmpegPath,
+      [
+        '-y',
+        '-i',
+        prepared.inputPath,
+        '-vn',
+        '-c:a',
+        'libopus',
+        '-b:a',
+        '128k',
+        '-vbr',
+        'on',
+        outputPath,
+      ],
+      { timeout: 120000 },
+    )
+
+    return {
+      ...prepared,
+      outputPath,
+    }
+  } catch (error) {
+    await cleanupJob(prepared.jobDir)
+    throw error
   }
 }
 

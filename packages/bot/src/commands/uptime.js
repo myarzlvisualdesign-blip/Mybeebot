@@ -8,10 +8,10 @@ export default {
   async execute({ reply, state }) {
     await reply(
       [
-        '*Uptime Mybeebot*',
-        '',
-        `Runtime: ${formatRuntime(process.uptime())}`,
-        `Koneksi: ${state.connection}`,
+        '╭━〔 ⏱️ UPTIME BOT 〕━⬣',
+        `┃ Runtime: ${formatRuntime(process.uptime())}`,
+        `┃ Koneksi: ${state.connection}`,
+        '╰━━━━━━━━━━━━━━━━⬣',
       ].join('\n'),
     )
   },

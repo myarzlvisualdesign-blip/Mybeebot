@@ -8,12 +8,13 @@ export default {
 
     await reply(
       [
-        `*Dukung ${config.botName}*`,
-        '',
+        '╭━〔 💝 DUKUNG BOT 〕━⬣',
+        `┃ Bot: ${config.botName}`,
+        `┃ Owner: ${config.ownerName}`,
+        `┃ Kontak: ${number}`,
+        '╰━━━━━━━━━━━━━━━━⬣',
         'Kalau mau dukung pengembangan bot, langsung hubungi owner ya.',
-        `Owner: ${config.ownerName}`,
-        `Kontak: ${number}`,
-        `Website: ${config.websiteUrl}`,
+        `🌐 Website: ${config.websiteUrl}`,
       ].join('\n'),
     )
   },

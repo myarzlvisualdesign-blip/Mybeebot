@@ -9,13 +9,13 @@ export default {
     const value = parseToggle(args[0])
     if (value === null) {
       await reply(
-        `Contoh: ${config.prefix}autoresponder on atau ${config.prefix}autoresponder off`,
+        `💬 Contoh: ${config.prefix}autoresponder on atau ${config.prefix}autoresponder off`,
       )
       return
     }
 
     const context = await ensureGroupAdmin(sock, message, config)
     const settings = await groupSettings.set(context.jid, { autoResponder: value })
-    await reply(`Auto-responder sekarang ${settings.autoResponder ? 'aktif' : 'mati'}.`)
+    await reply(`💬 Auto-responder sekarang ${settings.autoResponder ? 'aktif ✅' : 'mati ❌'}.`)
   },
 }

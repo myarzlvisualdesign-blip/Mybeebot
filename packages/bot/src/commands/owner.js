@@ -1,6 +1,6 @@
 export default {
   name: 'owner',
-  aliases: ['creator', 'contact'],
+  aliases: ['creator', 'contact', 'dev'],
   category: 'inti',
   description: 'Tampilkan identitas owner dan nomor kontaknya.',
   async execute({ config, reply }) {
@@ -10,11 +10,13 @@ export default {
 
     await reply(
       [
-        `*Info owner ${config.botName}*`,
-        '',
-        `Nama: ${config.ownerName}`,
-        `Nomor: ${numbers}`,
-        `Website: ${config.websiteUrl}`,
+        '╭━〔 👑 OWNER BOT 〕━⬣',
+        `┃ Nama: ${config.ownerName}`,
+        `┃ Nomor: ${numbers}`,
+        `┃ Website: ${config.websiteUrl}`,
+        `┃ Bot: ${config.botName}`,
+        '╰━━━━━━━━━━━━━━━━⬣',
+        '📬 Hubungi owner kalau mau custom fitur atau mode bot.',
       ].join('\n'),
     )
   },

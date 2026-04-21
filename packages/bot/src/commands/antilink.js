@@ -27,13 +27,13 @@ export default {
     const mode = parseAntiLinkMode(args[0])
     if (!mode) {
       await reply(
-        `Contoh: ${config.prefix}antilink on, ${config.prefix}antilink warn, atau ${config.prefix}antilink off`,
+        `🔗 Contoh: ${config.prefix}antilink on, ${config.prefix}antilink warn, atau ${config.prefix}antilink off`,
       )
       return
     }
 
     const context = await ensureGroupAdmin(sock, message, config)
     const settings = await groupSettings.set(context.jid, { antiLink: mode })
-    await reply(`Anti-link sekarang di mode *${settings.antiLink}*.`)
+    await reply(`🔗 Anti-link sekarang di mode *${settings.antiLink}*.`)
   },
 }

@@ -9,17 +9,17 @@ export default {
   async execute({ args, config, groupSettings, message, reply, sock }) {
     const value = parseToggle(args[0])
     if (value === null) {
-      await reply(`Contoh: ${config.prefix}aireply on atau ${config.prefix}aireply off`)
+      await reply(`🤖 Contoh: ${config.prefix}aireply on atau ${config.prefix}aireply off`)
       return
     }
 
     if (value && !aiIsConfigured(config)) {
-      await reply('AI belum aktif. Isi AI_API_KEY, AI_BASE_URL, dan AI_MODEL dulu.')
+      await reply('⚠️ AI belum aktif. Isi AI_API_KEY, AI_BASE_URL, dan AI_MODEL dulu.')
       return
     }
 
     const context = await ensureGroupAdmin(sock, message, config)
     const settings = await groupSettings.set(context.jid, { aiReply: value })
-    await reply(`AI reply otomatis sekarang ${settings.aiReply ? 'aktif' : 'mati'}.`)
+    await reply(`🤖 AI reply otomatis sekarang ${settings.aiReply ? 'aktif ✅' : 'mati ❌'}.`)
   },
 }

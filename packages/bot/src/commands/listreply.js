@@ -12,7 +12,7 @@ export default {
 
     if (!entries.length) {
       await reply(
-        `Belum ada auto-responder. Tambah dulu dengan ${config.prefix}setreply halo|Hai juga`,
+        `💬 Belum ada auto-responder. Tambah dulu dengan ${config.prefix}setreply halo|Hai juga`,
       )
       return
     }
@@ -21,6 +21,6 @@ export default {
       ([trigger, response], index) => `${index + 1}. ${trigger} -> ${response}`,
     )
 
-    await reply(['*Daftar auto-responder*', '', ...lines].join('\n'))
+    await reply(['╭━〔 💬 DAFTAR AUTO-RESPONDER 〕━⬣', ...lines, '╰━━━━━━━━━━━━━━━━⬣'].join('\n'))
   },
 }
