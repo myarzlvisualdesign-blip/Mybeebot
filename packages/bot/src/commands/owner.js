@@ -1,6 +1,6 @@
 export default {
   name: 'owner',
-  aliases: ['creator'],
+  aliases: ['creator', 'contact'],
   category: 'core',
   description: 'Show owner identity and contact numbers.',
   async execute({ config, reply }) {

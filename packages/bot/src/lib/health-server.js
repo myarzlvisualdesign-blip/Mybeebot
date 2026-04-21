@@ -60,6 +60,7 @@ export function startHealthServer(config, state, runtime, actions) {
         websiteUrl: config.websiteUrl,
         healthUrl: `http://127.0.0.1:${config.healthPort}/health`,
         localPairingUrl: `http://127.0.0.1:${config.healthPort}/pairing?phone=6281234567890`,
+        commands: actions.getCommands ? actions.getCommands() : [],
       })
       return
     }

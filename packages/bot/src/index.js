@@ -261,7 +261,18 @@ async function boot() {
   })
 }
 
-startHealthServer(config, state, runtime, { requestPairingCode, resetSession })
+startHealthServer(config, state, runtime, {
+  requestPairingCode,
+  resetSession,
+  getCommands: () =>
+    registry.list().map((entry) => ({
+      name: entry.name,
+      aliases: entry.aliases,
+      category: entry.category,
+      description: entry.description,
+      ownerOnly: entry.ownerOnly,
+    })),
+})
 
 boot().catch((error) => {
   logger.error(`Boot failed: ${error.message}`)

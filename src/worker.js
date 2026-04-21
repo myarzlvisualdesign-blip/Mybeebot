@@ -6,6 +6,13 @@ const commands = [
   ".owner",
   ".repo",
   ".uptime",
+  ".rules",
+  ".donate",
+  ".id",
+  ".groupinfo",
+  ".admins",
+  ".tagall",
+  ".hidetag",
   ".echo",
   ".reload"
 ];

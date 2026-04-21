@@ -37,6 +37,14 @@ type LiveMeta = {
   note: string
 }
 
+type BotCommandMeta = {
+  name: string
+  aliases: string[]
+  category: string
+  description: string
+  ownerOnly: boolean
+}
+
 type BotMeta = {
   ok: boolean
   bot: string
@@ -44,6 +52,7 @@ type BotMeta = {
   websiteUrl: string
   healthUrl: string
   localPairingUrl: string
+  commands?: BotCommandMeta[]
 }
 
 type PairingResult = {
@@ -94,6 +103,13 @@ const commandDescriptions: Record<string, string> = {
   '.owner': 'Show owner identity and contact.',
   '.repo': 'Jump to the repository.',
   '.uptime': 'Show bot runtime duration.',
+  '.rules': 'Show the usage rules.',
+  '.donate': 'Show support and donation info.',
+  '.id': 'Show current chat and sender ID.',
+  '.groupinfo': 'Show current group information.',
+  '.admins': 'Mention the group admins.',
+  '.tagall': 'Mention everyone in the group.',
+  '.hidetag': 'Send a hidden mention to all members.',
   '.echo': 'Fast command response test.',
   '.reload': 'Reload modules for the owner.',
 }
@@ -106,6 +122,13 @@ const commandExamples: Record<string, string> = {
   '.owner': '.owner',
   '.repo': '.repo',
   '.uptime': '.uptime',
+  '.rules': '.rules',
+  '.donate': '.donate',
+  '.id': '.id',
+  '.groupinfo': '.groupinfo',
+  '.admins': '.admins',
+  '.tagall': '.tagall Attention everyone',
+  '.hidetag': '.hidetag silent message here',
   '.echo': '.echo halo',
   '.reload': '.reload',
 }
@@ -430,9 +453,11 @@ function App() {
   const overallReadiness = Math.round(
     (edgeProgress + runtimeProgress + pairingProgress + commandProgress) / 4,
   )
-  const activeCommands = status?.commands?.length
-    ? status.commands
-    : Object.keys(commandDescriptions)
+  const activeCommands = botMeta?.commands?.length
+    ? botMeta.commands.map((command) => `.${command.name}`)
+    : status?.commands?.length
+      ? status.commands
+      : Object.keys(commandDescriptions)
   const normalizedPhone = normalizePhone(pairPhone)
   const isLinked = Boolean(botStatus?.registered)
   const isBotReady = isLinked && botStatus?.connection === 'open'
@@ -537,6 +562,18 @@ function App() {
   ].filter((link) => !searchNeedle || `${link.label} ${link.href}`.toLowerCase().includes(searchNeedle))
 
   const totalMatches = filteredCommands.length + filteredEndpoints.length + runtimeFeed.length + controlLinks.length
+
+  function getCommandDescription(command: string) {
+    const runtimeDescription = botMeta?.commands?.find(
+      (entry) => `.${entry.name}` === command,
+    )?.description
+
+    return runtimeDescription || commandDescriptions[command] || 'Core command loaded in runtime.'
+  }
+
+  function getCommandExample(command: string) {
+    return commandExamples[command] || command
+  }
 
   const nextAction = (() => {
     if (!adminKey) {
@@ -1253,7 +1290,7 @@ function App() {
                             className="command-action"
                             onClick={() =>
                               void copyText(
-                                commandExamples[command] ?? command,
+                                getCommandExample(command),
                                 `${command} example`,
                               )
                             }
@@ -1261,10 +1298,8 @@ function App() {
                             copy
                           </button>
                         </div>
-                        <p>{commandDescriptions[command] ?? 'Core command loaded in runtime.'}</p>
-                        <code className="command-example">
-                          {commandExamples[command] ?? command}
-                        </code>
+                        <p>{getCommandDescription(command)}</p>
+                        <code className="command-example">{getCommandExample(command)}</code>
                       </article>
                     ))
                   ) : (
