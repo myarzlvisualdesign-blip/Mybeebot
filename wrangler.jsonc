@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "mybeebot",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-04-21",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "mybeebot.myarzl-visualdesign.my.id",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  }
+}

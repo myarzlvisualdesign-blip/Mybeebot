@@ -1,0 +1,24 @@
+{
+  "name": "mybeebot",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Fresh WhatsApp bot starter with a Cloudflare-deployed companion site.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @mybeebot/web",
+    "build:web": "npm run build --workspace @mybeebot/web",
+    "lint:web": "npm run lint --workspace @mybeebot/web",
+    "bot:dev": "npm run dev --workspace @mybeebot/bot",
+    "bot:start": "npm run start --workspace @mybeebot/bot",
+    "lint:bot": "npm run lint --workspace @mybeebot/bot",
+    "build": "npm run build:web",
+    "lint": "npm run lint:web && npm run lint:bot",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.84.0"
+  }
+}
