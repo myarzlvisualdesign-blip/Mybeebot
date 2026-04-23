@@ -30,15 +30,9 @@ type Settings = {
     minRepeats: number
     suggestionLimit: number
   }
-  ai: {
-    enabled: boolean
-    systemPrompt: string
-    tone: string
-    replyStyle: string
-    maxResponseLength: number
+  smartReply: {
     fallbackMode: string
-    allowedFeatures: string[]
-    escalationRules: string
+    handoffRules: string
   }
   welcomeMessage: string
   fallbackMessage: string
@@ -274,15 +268,9 @@ const emptySettings: Settings = {
     minRepeats: 2,
     suggestionLimit: 5,
   },
-  ai: {
-    enabled: false,
-    systemPrompt: '',
-    tone: '',
-    replyStyle: '',
-    maxResponseLength: 400,
+  smartReply: {
     fallbackMode: 'handoff',
-    allowedFeatures: ['faq', 'template', 'summary'],
-    escalationRules: '',
+    handoffRules: '',
   },
   welcomeMessage: '',
   fallbackMessage: '',
@@ -1089,7 +1077,7 @@ function App() {
             <div className="form-grid">
               <label>
                 Mode balasan saat FAQ tidak cocok
-                <select value={settingsDraft.ai.fallbackMode} onChange={(event) => updateSettings((draft) => { draft.ai.fallbackMode = event.target.value })}>
+                <select value={settingsDraft.smartReply.fallbackMode} onChange={(event) => updateSettings((draft) => { draft.smartReply.fallbackMode = event.target.value })}>
                   <option value="handoff">oper ke admin</option>
                   <option value="template">pakai template</option>
                   <option value="silent">diam</option>
@@ -1109,7 +1097,7 @@ function App() {
                 Mode balasan otomatis
                 <select value={settingsDraft.autoReply.mode} onChange={(event) => updateSettings((draft) => { draft.autoReply.mode = event.target.value })}>
                   <option value="faq-first">FAQ dulu</option>
-                  <option value="ai-first">template lalu handoff</option>
+                  <option value="smart-reply">smart reply</option>
                   <option value="off">mati</option>
                 </select>
               </label>
@@ -1470,7 +1458,7 @@ function App() {
             </label>
             <label>
               Aturan handoff
-              <textarea rows={5} value={settingsDraft.ai.escalationRules} onChange={(event) => updateSettings((draft) => { draft.ai.escalationRules = event.target.value })} />
+              <textarea rows={5} value={settingsDraft.smartReply.handoffRules} onChange={(event) => updateSettings((draft) => { draft.smartReply.handoffRules = event.target.value })} />
             </label>
             <button className="primary" type="button" disabled={isBusy} onClick={() => void saveSettings()}>
               Simpan integrasi

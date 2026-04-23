@@ -5,7 +5,7 @@ const groupDefaults = {
   antiSpam: false,
   antiBadword: false,
   badWords: [],
-  aiReply: false,
+  smartReply: false,
   autoResponder: false,
   autoReplies: {},
 }
@@ -75,10 +75,35 @@ function normalizeInteger(value, fallback, min, max) {
   return Math.min(max, Math.max(min, Math.round(number)))
 }
 
+function normalizeAutoReplyMode(value, fallback = 'faq-first') {
+  const normalized = safeString(value, 32).toLowerCase()
+  if (normalized === 'ai-first' || normalized === 'template-first') {
+    return 'smart-reply'
+  }
+
+  return ['faq-first', 'smart-reply', 'off'].includes(normalized) ? normalized : fallback
+}
+
+function normalizeSmartReplySettings(current = {}, patch = null) {
+  const source = patch && typeof patch === 'object' ? { ...current, ...patch } : current
+  const fallbackMode = safeString(source?.fallbackMode, 32).toLowerCase()
+
+  return {
+    fallbackMode: ['handoff', 'template', 'silent'].includes(fallbackMode)
+      ? fallbackMode
+      : 'handoff',
+    handoffRules: safeString(
+      source?.handoffRules ?? source?.escalationRules ?? current?.handoffRules,
+      2000,
+    ),
+  }
+}
+
 function normalizeGroupSettings(value = {}) {
   const autoReplies =
     value.autoReplies && typeof value.autoReplies === 'object' ? value.autoReplies : {}
   const badWords = Array.isArray(value.badWords) ? value.badWords : []
+  const legacySmartReply = 'smartReply' in value ? value.smartReply : value.aiReply
 
   return {
     ...groupDefaults,
@@ -89,7 +114,7 @@ function normalizeGroupSettings(value = {}) {
     badWords: [
       ...new Set(badWords.map((word) => String(word).trim().toLowerCase()).filter(Boolean)),
     ],
-    aiReply: Boolean(value.aiReply),
+    smartReply: Boolean(legacySmartReply),
     autoResponder: Boolean(value.autoResponder),
     autoReplies: Object.fromEntries(
       Object.entries(autoReplies)
@@ -146,9 +171,7 @@ function normalizeSettings(current, patch) {
         'enabled' in patch.autoReply
           ? Boolean(patch.autoReply.enabled)
           : Boolean(next.autoReply.enabled),
-      mode: ['faq-first', 'ai-first', 'off'].includes(patch.autoReply.mode)
-        ? patch.autoReply.mode
-        : next.autoReply.mode,
+      mode: normalizeAutoReplyMode(patch.autoReply.mode, next.autoReply.mode),
     }
   }
 
@@ -189,33 +212,19 @@ function normalizeSettings(current, patch) {
     }
   }
 
-  if (patch.ai && typeof patch.ai === 'object') {
-    next.ai = {
-      ...next.ai,
-      enabled: 'enabled' in patch.ai ? Boolean(patch.ai.enabled) : Boolean(next.ai.enabled),
-      systemPrompt:
-        'systemPrompt' in patch.ai
-          ? safeString(patch.ai.systemPrompt, 6000)
-          : next.ai.systemPrompt,
-      tone: 'tone' in patch.ai ? safeString(patch.ai.tone, 120) : next.ai.tone,
-      replyStyle:
-        'replyStyle' in patch.ai ? safeString(patch.ai.replyStyle, 120) : next.ai.replyStyle,
-      maxResponseLength:
-        'maxResponseLength' in patch.ai
-          ? Math.min(2000, Math.max(80, Number(patch.ai.maxResponseLength || 400)))
-          : Number(next.ai.maxResponseLength || 400),
-      fallbackMode: ['handoff', 'template', 'silent'].includes(patch.ai.fallbackMode)
-        ? patch.ai.fallbackMode
-        : next.ai.fallbackMode,
-      allowedFeatures: Array.isArray(patch.ai.allowedFeatures)
-        ? uniqueStrings(patch.ai.allowedFeatures).slice(0, 20)
-        : next.ai.allowedFeatures,
-      escalationRules:
-        'escalationRules' in patch.ai
-          ? safeString(patch.ai.escalationRules, 2000)
-          : next.ai.escalationRules,
-    }
+  const smartReplyPatch =
+    patch.smartReply && typeof patch.smartReply === 'object'
+      ? patch.smartReply
+      : patch.ai && typeof patch.ai === 'object'
+        ? patch.ai
+        : null
+
+  if (smartReplyPatch) {
+    next.smartReply = normalizeSmartReplySettings(next.smartReply, smartReplyPatch)
   }
+
+  next.smartReply = normalizeSmartReplySettings(next.smartReply)
+  delete next.ai
 
   if ('welcomeMessage' in patch) {
     next.welcomeMessage = safeString(patch.welcomeMessage, 2000)
@@ -307,7 +316,7 @@ export class SettingsService {
       autoReply: settings.autoReply,
       replyTiming: settings.replyTiming,
       improvement: settings.improvement,
-      ai: settings.ai,
+      smartReply: settings.smartReply,
     }
   }
 

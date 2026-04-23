@@ -8,7 +8,7 @@ const defaults = {
   antiSpam: false,
   antiBadword: false,
   badWords: [],
-  aiReply: false,
+  smartReply: false,
   autoResponder: false,
   autoReplies: {},
 }
@@ -17,6 +17,7 @@ function normalizeSettings(value = {}) {
   const autoReplies =
     value.autoReplies && typeof value.autoReplies === 'object' ? value.autoReplies : {}
   const badWords = Array.isArray(value.badWords) ? value.badWords : []
+  const legacySmartReply = 'smartReply' in value ? value.smartReply : value.aiReply
 
   return {
     ...defaults,
@@ -25,7 +26,7 @@ function normalizeSettings(value = {}) {
     antiSpam: Boolean(value.antiSpam),
     antiBadword: Boolean(value.antiBadword),
     badWords: [...new Set(badWords.map((word) => String(word).trim().toLowerCase()).filter(Boolean))],
-    aiReply: Boolean(value.aiReply),
+    smartReply: Boolean(legacySmartReply),
     autoResponder: Boolean(value.autoResponder),
     autoReplies: Object.fromEntries(
       Object.entries(autoReplies)

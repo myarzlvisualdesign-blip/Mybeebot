@@ -23,10 +23,6 @@ function splitCsv(value) {
     .filter(Boolean)
 }
 
-function firstDefined(...values) {
-  return values.find((value) => Boolean(value)) || ''
-}
-
 const botName = process.env.BOT_NAME || 'Mybeebot'
 
 export const config = {
@@ -49,26 +45,4 @@ export const config = {
   ytDlpPath:
     process.env.YTDLP_PATH ||
     path.join(process.env.HOME || '', 'Library', 'Python', '3.9', 'bin', 'yt-dlp'),
-  aiApiKey: firstDefined(
-    process.env.AI_API_KEY,
-    process.env.OPENAI_API_KEY,
-    process.env.OPENROUTER_API_KEY,
-    process.env.GROQ_API_KEY,
-  ),
-  aiBaseUrl:
-    process.env.AI_BASE_URL ||
-    (process.env.OPENROUTER_API_KEY
-      ? 'https://openrouter.ai/api/v1/chat/completions'
-      : process.env.GROQ_API_KEY
-        ? 'https://api.groq.com/openai/v1/chat/completions'
-        : 'https://api.openai.com/v1/chat/completions'),
-  aiModel:
-    process.env.AI_MODEL ||
-    process.env.OPENAI_MODEL ||
-    process.env.OPENROUTER_MODEL ||
-    process.env.GROQ_MODEL ||
-    'gpt-4.1-mini',
-  aiSystemPrompt:
-    process.env.AI_SYSTEM_PROMPT ||
-    `${botName} adalah asisten WhatsApp yang menjawab singkat, jelas, dan natural dalam bahasa Indonesia.`,
 }

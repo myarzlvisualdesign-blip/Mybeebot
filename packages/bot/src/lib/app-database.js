@@ -33,6 +33,29 @@ function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }
 
+function normalizeAutoReplyMode(value, fallback = 'faq-first') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'ai-first' || normalized === 'template-first') {
+    return 'smart-reply'
+  }
+
+  return ['faq-first', 'smart-reply', 'off'].includes(normalized) ? normalized : fallback
+}
+
+function normalizeSmartReplySettings(value = {}, fallback = {}) {
+  const fallbackMode = String(value?.fallbackMode || '').trim().toLowerCase()
+  const handoffRules = String(
+    value?.handoffRules || value?.escalationRules || fallback.handoffRules || '',
+  ).trim()
+
+  return {
+    fallbackMode: ['handoff', 'template', 'silent'].includes(fallbackMode)
+      ? fallbackMode
+      : fallback.fallbackMode || 'handoff',
+    handoffRules,
+  }
+}
+
 function defaultState() {
   return {
     schemaVersion,
@@ -64,16 +87,9 @@ function defaultState() {
         minRepeats: 2,
         suggestionLimit: 5,
       },
-      ai: {
-        enabled: false,
-        systemPrompt:
-          'Mybeebot adalah asisten WhatsApp yang menjawab singkat, jelas, dan natural dalam bahasa Indonesia.',
-        tone: 'ramah dan profesional',
-        replyStyle: 'singkat',
-        maxResponseLength: 400,
+      smartReply: {
         fallbackMode: 'handoff',
-        allowedFeatures: ['faq', 'template', 'summary'],
-        escalationRules:
+        handoffRules:
           'Alihkan ke admin jika user meminta transaksi, komplain sensitif, data pribadi, atau bot tidak yakin.',
       },
       welcomeMessage: 'Halo, selamat datang. Ada yang bisa Mybeebot bantu?',
@@ -143,6 +159,13 @@ function defaultState() {
 
 function mergeDefaults(input = {}) {
   const defaults = defaultState()
+  const inputSettings = input.settings || {}
+  const {
+    ai: legacyAi = {},
+    smartReply: incomingSmartReply = {},
+    ...restInputSettings
+  } = inputSettings
+
   const state = {
     ...defaults,
     ...input,
@@ -152,33 +175,42 @@ function mergeDefaults(input = {}) {
     },
     settings: {
       ...defaults.settings,
-      ...(input.settings || {}),
+      ...restInputSettings,
       activeHours: {
         ...defaults.settings.activeHours,
-        ...(input.settings?.activeHours || {}),
+        ...(inputSettings.activeHours || {}),
       },
       autoReply: {
         ...defaults.settings.autoReply,
-        ...(input.settings?.autoReply || {}),
+        ...(inputSettings.autoReply || {}),
+        mode: normalizeAutoReplyMode(
+          inputSettings.autoReply?.mode,
+          defaults.settings.autoReply.mode,
+        ),
       },
       replyTiming: {
         ...defaults.settings.replyTiming,
-        ...(input.settings?.replyTiming || {}),
+        ...(inputSettings.replyTiming || {}),
       },
       improvement: {
         ...defaults.settings.improvement,
-        ...(input.settings?.improvement || {}),
+        ...(inputSettings.improvement || {}),
       },
-      ai: {
-        ...defaults.settings.ai,
-        ...(input.settings?.ai || {}),
+      smartReply: {
+        ...normalizeSmartReplySettings(
+          {
+            ...(legacyAi || {}),
+            ...(incomingSmartReply || {}),
+          },
+          defaults.settings.smartReply,
+        ),
       },
       integrations: {
         ...defaults.settings.integrations,
-        ...(input.settings?.integrations || {}),
+        ...(inputSettings.integrations || {}),
         webhook: {
           ...defaults.settings.integrations.webhook,
-          ...(input.settings?.integrations?.webhook || {}),
+          ...(inputSettings.integrations?.webhook || {}),
         },
       },
     },

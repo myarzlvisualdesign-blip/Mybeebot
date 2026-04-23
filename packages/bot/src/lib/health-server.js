@@ -247,19 +247,6 @@ function redactSettings(settings) {
   }
 }
 
-function buildRuntimeConfig(config, settings) {
-  return {
-    ...config,
-    prefix: settings.commandPrefixes?.[0] || config.prefix,
-    aiEnabled: settings.ai.enabled,
-    aiSystemPrompt: settings.ai.systemPrompt || config.aiSystemPrompt,
-    aiTone: settings.ai.tone,
-    aiReplyStyle: settings.ai.replyStyle,
-    aiMaxResponseLength: settings.ai.maxResponseLength,
-    aiEscalationRules: settings.ai.escalationRules,
-  }
-}
-
 async function handleAdminRequest(request, response, url, config, actions) {
   if (!canAccessAdminSurface(request, config)) {
     writeJson(response, 403, {
@@ -491,12 +478,9 @@ async function handleAdminRequest(request, response, url, config, actions) {
     if (resource === 'test-reply' && request.method === 'POST') {
       const payload = await readJsonBody(request)
       const message = String(payload.message || '')
-      const settings = service.getSettings()
       const result = await resolveAssistantReply({
-        config: buildRuntimeConfig(config, settings),
         settingsService: service,
         prompt: message,
-        context: 'Preview balasan dari dashboard admin.',
       })
       writeJson(response, 200, {
         ok: true,

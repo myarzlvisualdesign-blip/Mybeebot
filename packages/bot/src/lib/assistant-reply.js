@@ -1,5 +1,3 @@
-import { aiIsConfigured, generateAiReply } from './ai-client.js'
-
 function trimText(value, maxLength = 4000) {
   return String(value ?? '').trim().slice(0, maxLength)
 }
@@ -26,7 +24,7 @@ export function buildOfflineAssistantReply({ settingsService, prompt = '' }) {
     }
   }
 
-  const fallbackMode = settings.ai?.fallbackMode || 'handoff'
+  const fallbackMode = settings.smartReply?.fallbackMode || 'handoff'
   if (fallbackMode === 'silent') {
     return {
       mode: 'silent',
@@ -58,40 +56,11 @@ export function buildOfflineAssistantReply({ settingsService, prompt = '' }) {
 }
 
 export async function resolveAssistantReply({
-  config,
   settingsService,
   prompt,
-  context = '',
 }) {
-  const offlineReply = buildOfflineAssistantReply({
+  return buildOfflineAssistantReply({
     settingsService,
     prompt,
   })
-
-  if (!aiIsConfigured(config)) {
-    return offlineReply
-  }
-
-  try {
-    const text = await generateAiReply({
-      config,
-      prompt,
-      context,
-    })
-
-    return {
-      mode: 'ai',
-      text,
-      matchedFaq: offlineReply.matchedFaq || null,
-    }
-  } catch (error) {
-    if (offlineReply.text) {
-      return {
-        ...offlineReply,
-        warning: error instanceof Error ? error.message : String(error),
-      }
-    }
-
-    throw error
-  }
 }

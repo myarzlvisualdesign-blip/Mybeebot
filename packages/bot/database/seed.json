@@ -27,15 +27,9 @@
       "minRepeats": 2,
       "suggestionLimit": 5
     },
-    "ai": {
-      "enabled": false,
-      "systemPrompt": "Mybeebot adalah asisten WhatsApp yang menjawab singkat, jelas, dan natural dalam bahasa Indonesia.",
-      "tone": "ramah dan profesional",
-      "replyStyle": "singkat",
-      "maxResponseLength": 400,
+    "smartReply": {
       "fallbackMode": "handoff",
-      "allowedFeatures": ["faq", "template", "summary"],
-      "escalationRules": "Alihkan ke admin jika user meminta transaksi, komplain sensitif, data pribadi, atau bot tidak yakin."
+      "handoffRules": "Alihkan ke admin jika user meminta transaksi, komplain sensitif, data pribadi, atau bot tidak yakin."
     },
     "welcomeMessage": "Halo, selamat datang. Ada yang bisa Mybeebot bantu?",
     "fallbackMessage": "Maaf, perintah belum dikenali. Ketik /menu untuk melihat fitur yang tersedia.",

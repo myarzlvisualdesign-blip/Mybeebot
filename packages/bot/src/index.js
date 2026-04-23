@@ -70,12 +70,6 @@ function buildRuntimeConfig() {
   return {
     ...config,
     prefix: settings.commandPrefixes?.[0] || config.prefix,
-    aiEnabled: settings.ai.enabled,
-    aiSystemPrompt: settings.ai.systemPrompt || config.aiSystemPrompt,
-    aiTone: settings.ai.tone,
-    aiReplyStyle: settings.ai.replyStyle,
-    aiMaxResponseLength: settings.ai.maxResponseLength,
-    aiEscalationRules: settings.ai.escalationRules,
   }
 }
 
@@ -111,7 +105,7 @@ function containsLink(text) {
   )
 }
 
-function shouldTriggerAutoAi(message, body, sock) {
+function shouldTriggerSmartReply(message, body, sock) {
   const chatJid = getChatJid(message)
   if (!chatJid.endsWith('@g.us')) {
     return false
@@ -133,7 +127,7 @@ function shouldTriggerAutoAi(message, body, sock) {
   )
 }
 
-function buildAiPrompt(body) {
+function buildSmartReplyPrompt(body) {
   return body
     .replace(new RegExp(`^${config.botName}\\s*[:,-]?\\s*`, 'i'), '')
     .replace(/^bot\s*[:,-]?\s*/i, '')
@@ -483,13 +477,13 @@ async function handleAutoResponder({ body, message, reply }) {
   return true
 }
 
-async function handleAutoAi({ body, message, reply, sock }) {
+async function handleSmartReply({ body, message, reply, sock }) {
   const chatJid = getChatJid(message)
-  const runtimeConfig = buildRuntimeConfig()
   const globalSettings = settingsService.getSettings()
   const groupMode = chatJid.endsWith('@g.us')
   const settings = groupMode ? groupSettings.get(chatJid) : null
-  const groupTriggered = groupMode && settings?.aiReply && shouldTriggerAutoAi(message, body, sock)
+  const groupTriggered =
+    groupMode && settings?.smartReply && shouldTriggerSmartReply(message, body, sock)
   const privateTriggered =
     !groupMode && globalSettings.autoReply.enabled && globalSettings.autoReply.mode !== 'off'
 
@@ -497,22 +491,14 @@ async function handleAutoAi({ body, message, reply, sock }) {
     return false
   }
 
-  const prompt = buildAiPrompt(body)
+  const prompt = buildSmartReplyPrompt(body)
   if (!prompt || prompt.length < 3) {
     return false
   }
 
-  const metadata = await sock.groupMetadata(chatJid).catch(() => null)
-  const sender = getSenderJid(message)
   const result = await resolveAssistantReply({
-    config: runtimeConfig,
     settingsService,
     prompt,
-    context: [
-      `${groupMode ? 'Grup' : 'Chat'}: ${metadata?.subject || chatJid}`,
-      `Pengirim: ${toMention(sender)}`,
-      `Balas dalam bahasa Indonesia.`,
-    ].join('\n'),
   })
 
   if (!result.text) {
@@ -946,14 +932,14 @@ async function boot() {
         }
       }
 
-      const aiReplied = await handleAutoAi({
+      const smartReplied = await handleSmartReply({
         body,
         message,
         reply,
         sock,
       })
       if (
-        !aiReplied &&
+        !smartReplied &&
         !chatJid.endsWith('@g.us') &&
         settings.autoReply.enabled &&
         settings.autoReply.mode !== 'off'
