@@ -792,11 +792,33 @@ label {
     min-height: auto;
     margin: 10px auto;
     grid-template-columns: 1fr;
+    gap: 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .app-shell::before,
+  .app-shell::after {
+    display: none;
   }
 
   .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border: 1px solid rgba(148, 171, 255, 0.18);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+  }
+
+  .workspace {
+    border: 1px solid rgba(148, 171, 255, 0.18);
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at 85% 0%, rgba(86, 214, 255, 0.08), transparent 26%),
+      radial-gradient(circle at 55% 100%, rgba(131, 105, 255, 0.12), transparent 28%),
+      linear-gradient(180deg, rgba(10, 18, 42, 0.96), rgba(3, 8, 24, 0.97)),
+      var(--panel-strong);
+    box-shadow: var(--shadow);
   }
 
   .tab-list {
