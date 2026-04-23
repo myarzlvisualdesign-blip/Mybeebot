@@ -1,9 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Sora:wght@500;600;700&display=swap');
 
 :root {
-  --bg-top: #68adff;
-  --bg-mid: #5065ff;
-  --bg-bottom: #3847b2;
+  --bg-top: #86c6ff;
+  --bg-mid: #3147c8;
+  --bg-bottom: #0a1333;
+  --bg-core: #050b1d;
   --panel: rgba(8, 17, 42, 0.82);
   --panel-soft: rgba(10, 20, 50, 0.7);
   --panel-strong: rgba(6, 12, 30, 0.88);
@@ -19,13 +20,14 @@
   --gold: #ffbf5b;
   --danger: #ff8a8a;
   --shadow:
-    0 26px 60px rgba(14, 24, 74, 0.3),
-    0 6px 20px rgba(5, 12, 34, 0.35);
+    0 30px 80px rgba(3, 10, 30, 0.54),
+    0 10px 28px rgba(5, 12, 34, 0.4);
   color: var(--text);
   background:
-    radial-gradient(circle at 15% 18%, rgba(157, 206, 255, 0.95), transparent 28%),
-    radial-gradient(circle at 75% 22%, rgba(112, 156, 255, 0.48), transparent 30%),
-    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 48%, var(--bg-bottom) 100%);
+    radial-gradient(circle at 12% 14%, rgba(158, 231, 255, 0.92), transparent 20%),
+    radial-gradient(circle at 82% 18%, rgba(78, 127, 255, 0.42), transparent 26%),
+    radial-gradient(circle at 50% 78%, rgba(117, 84, 255, 0.22), transparent 24%),
+    linear-gradient(180deg, var(--bg-top) 0%, #5f96eb 12%, var(--bg-mid) 36%, var(--bg-bottom) 72%, var(--bg-core) 100%);
   font-family: 'Manrope', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -46,6 +48,10 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at top, rgba(132, 198, 255, 0.3), transparent 32%),
+    linear-gradient(180deg, rgba(7, 14, 34, 0) 0%, rgba(4, 9, 26, 0.28) 100%);
 }
 
 body::before {
@@ -53,8 +59,27 @@ body::before {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(circle at 12% 75%, rgba(94, 197, 255, 0.16), transparent 18%),
-    radial-gradient(circle at 50% 100%, rgba(163, 111, 255, 0.2), transparent 20%);
+    linear-gradient(rgba(121, 169, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(121, 169, 255, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 15% 72%, rgba(94, 197, 255, 0.14), transparent 20%),
+    radial-gradient(circle at 72% 84%, rgba(163, 111, 255, 0.18), transparent 22%);
+  background-size: 72px 72px, 72px 72px, auto, auto;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: auto -12% -20% auto;
+  width: 56vw;
+  height: 56vw;
+  max-width: 860px;
+  max-height: 860px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(86, 214, 255, 0.14) 0%, rgba(86, 214, 255, 0.08) 18%, transparent 62%);
+  filter: blur(10px);
   pointer-events: none;
 }
 
@@ -171,24 +196,47 @@ label {
   margin: 36px auto;
   display: grid;
   grid-template-columns: 252px minmax(0, 1fr);
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(148, 171, 255, 0.18);
   border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(11, 20, 46, 0.96), rgba(4, 10, 28, 0.95)),
+    radial-gradient(circle at 85% 0%, rgba(86, 214, 255, 0.08), transparent 26%),
+    radial-gradient(circle at 55% 100%, rgba(131, 105, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(10, 18, 42, 0.96), rgba(3, 8, 24, 0.97)),
     var(--panel-strong);
+  backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
+  isolation: isolate;
+}
+
+.app-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, rgba(125, 196, 255, 0.08), transparent 24%, transparent 70%, rgba(141, 103, 255, 0.08) 100%),
+    repeating-linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.016) 0,
+      rgba(255, 255, 255, 0.016) 1px,
+      transparent 1px,
+      transparent 34px
+    );
+  pointer-events: none;
 }
 
 .app-shell::after {
   content: '';
   position: absolute;
-  right: 18%;
-  bottom: -46px;
-  width: 300px;
-  height: 96px;
-  background: radial-gradient(circle, rgba(132, 130, 255, 0.45), transparent 72%);
-  filter: blur(20px);
+  right: 12%;
+  bottom: -54px;
+  width: 360px;
+  height: 120px;
+  background:
+    radial-gradient(circle, rgba(112, 237, 255, 0.18), transparent 42%),
+    radial-gradient(circle, rgba(132, 130, 255, 0.34), transparent 70%);
+  filter: blur(26px);
   pointer-events: none;
 }
 
@@ -199,7 +247,9 @@ label {
   flex-direction: column;
   gap: 18px;
   padding: 22px 18px;
-  background: linear-gradient(180deg, rgba(74, 108, 255, 0.28), rgba(7, 16, 38, 0.95));
+  background:
+    linear-gradient(180deg, rgba(86, 121, 255, 0.3), rgba(8, 18, 42, 0.95)),
+    radial-gradient(circle at 0% 0%, rgba(108, 214, 255, 0.12), transparent 26%);
   border-right: 1px solid var(--line);
 }
 
@@ -265,6 +315,7 @@ label {
   z-index: 1;
   min-width: 0;
   padding: 24px;
+  overflow: visible;
 }
 
 .topbar {
@@ -412,13 +463,17 @@ label {
 
 .inline-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) auto;
   gap: 10px;
+  align-items: center;
 }
 
-.inline-form select,
+.inline-form > * {
+  min-width: 0;
+}
+
 .inline-form input:nth-child(2) {
-  min-width: 160px;
+  min-width: 220px;
 }
 
 .primary,
@@ -696,15 +751,25 @@ label {
   gap: 18px;
 }
 
+.role-grid > div {
+  min-width: 0;
+}
+
 .role-grid p {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   margin: 0;
   padding: 10px 0;
   border-top: 1px solid var(--line);
   color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.role-grid p button {
+  flex-shrink: 0;
 }
 
 @media (max-width: 1100px) {
@@ -756,7 +821,7 @@ label {
   }
 
   .inline-form {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
