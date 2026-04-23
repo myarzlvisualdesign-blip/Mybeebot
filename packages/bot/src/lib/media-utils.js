@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { getChatJid } from './group-utils.js'
 import { logger } from './logger.js'
 
 const execFileAsync = promisify(execFile)
@@ -91,7 +92,7 @@ function buildQuotedMessage(message) {
 
   return {
     key: {
-      remoteJid: message?.key?.remoteJid || '',
+      remoteJid: getChatJid(message),
       participant: contextInfo.participant,
       id: contextInfo.stanzaId || message?.key?.id || randomUUID(),
     },

@@ -14,6 +14,7 @@ export default {
       [
         '╭━〔 🛡️ OWNER PANEL 〕━⬣',
         `┃ Koneksi: ${state.connection}`,
+        `┃ Bot aktif: ${settings.botEnabled ? 'aktif ✅' : 'mati ❌'}`,
         `┃ Total Command: ${registry.count()}`,
         `┃ Grup Aktif: ${groups.length}`,
         `┃ Total User: ${users.length}`,

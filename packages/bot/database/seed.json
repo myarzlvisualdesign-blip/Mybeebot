@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "admins": {
+    "owners": ["6281234567890"],
+    "admins": []
+  },
+  "settings": {
+    "botEnabled": true,
+    "antiCall": true,
+    "commandPrefixes": [".", "/"],
+    "activeHours": {
+      "enabled": false,
+      "timezone": "Asia/Jakarta",
+      "start": "08:00",
+      "end": "21:00"
+    },
+    "autoReply": {
+      "enabled": true,
+      "mode": "faq-first"
+    },
+    "replyTiming": {
+      "enabled": true,
+      "delaySeconds": 2
+    },
+    "improvement": {
+      "enabled": true,
+      "minRepeats": 2,
+      "suggestionLimit": 5
+    },
+    "ai": {
+      "enabled": false,
+      "systemPrompt": "Mybeebot adalah asisten WhatsApp yang menjawab singkat, jelas, dan natural dalam bahasa Indonesia.",
+      "tone": "ramah dan profesional",
+      "replyStyle": "singkat",
+      "maxResponseLength": 400,
+      "fallbackMode": "handoff",
+      "allowedFeatures": ["faq", "template", "summary"],
+      "escalationRules": "Alihkan ke admin jika user meminta transaksi, komplain sensitif, data pribadi, atau bot tidak yakin."
+    },
+    "welcomeMessage": "Halo, selamat datang. Ada yang bisa Mybeebot bantu?",
+    "fallbackMessage": "Maaf, perintah belum dikenali. Ketik /menu untuk melihat fitur yang tersedia.",
+    "handoffMessage": "Saya teruskan ke admin supaya bisa dibantu lebih tepat.",
+    "commandKeywords": {},
+    "integrations": {
+      "webhook": {
+        "enabled": false,
+        "url": "",
+        "secret": ""
+      },
+      "apiBaseUrl": ""
+    }
+  },
+  "faq": [
+    {
+      "id": "faq-jam-operasional",
+      "question": "Jam operasional?",
+      "answer": "Jam operasional admin bisa diatur dari dashboard.",
+      "keywords": ["jam", "operasional", "buka"],
+      "enabled": true
+    }
+  ],
+  "templates": {
+    "welcome": {
+      "name": "welcome",
+      "body": "Halo, selamat datang. Ada yang bisa Mybeebot bantu?"
+    },
+    "handoff": {
+      "name": "handoff",
+      "body": "Saya teruskan ke admin supaya bisa dibantu lebih tepat."
+    }
+  },
+  "workflows": [
+    {
+      "id": "incoming-message-default",
+      "name": "Incoming Message Router",
+      "enabled": true,
+      "steps": [
+        "incoming_message",
+        "parse_command",
+        "role_check",
+        "settings_check",
+        "tool_or_reply_mode",
+        "execute",
+        "log_result",
+        "send_response"
+      ]
+    }
+  ]
+}

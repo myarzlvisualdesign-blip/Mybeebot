@@ -1,13 +1,140 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 
-type LiveStatus = {
+type AuthSession = {
+  authenticated: boolean
+  configured: boolean
+  expiresAt?: string
+}
+
+type Settings = {
+  botEnabled: boolean
+  antiCall: boolean
+  commandPrefixes: string[]
+  activeHours: {
+    enabled: boolean
+    timezone: string
+    start: string
+    end: string
+  }
+  autoReply: {
+    enabled: boolean
+    mode: string
+  }
+  replyTiming: {
+    enabled: boolean
+    delaySeconds: number
+  }
+  improvement: {
+    enabled: boolean
+    minRepeats: number
+    suggestionLimit: number
+  }
+  ai: {
+    enabled: boolean
+    systemPrompt: string
+    tone: string
+    replyStyle: string
+    maxResponseLength: number
+    fallbackMode: string
+    allowedFeatures: string[]
+    escalationRules: string
+  }
+  welcomeMessage: string
+  fallbackMessage: string
+  handoffMessage: string
+  commandKeywords: Record<string, string>
+  integrations: {
+    webhook: {
+      enabled: boolean
+      url: string
+      secret?: string
+    }
+    apiBaseUrl: string
+  }
+}
+
+type Tool = {
+  id: string
   name: string
-  status: string
-  domain: string
-  runtime: string
-  edgeServedAt: string
-  commands: string[]
+  description: string
+  enabled: boolean
+  protected: boolean
+  category: string
+  input_schema: unknown
+  output_schema: unknown
+  last_used: string | null
+  error_count: number
+}
+
+type FaqItem = {
+  id: string
+  question: string
+  answer: string
+  enabled: boolean
+}
+
+type TemplateItem = {
+  name: string
+  body: string
+}
+
+type ImprovementSuggestion = {
+  id: string
+  question: string
+  normalized: string
+  count: number
+  lastSeenAt: string
+  suggestedAnswer: string
+}
+
+type Roles = {
+  owners: string[]
+  admins: string[]
+}
+
+type Workflow = {
+  id: string
+  name: string
+  enabled: boolean
+  steps: string[]
+}
+
+type AuditLog = {
+  id: string
+  at: string
+  action: string
+  target: string
+  actor?: {
+    jid: string
+    role: string
+    source: string
+  }
+}
+
+type MessageLog = {
+  id: string
+  at: string
+  direction: 'in' | 'out'
+  chatJid: string
+  sender: string
+  body: string
+  mode?: string
+  role?: string
+  commandName?: string | null
+}
+
+type Snapshot = {
+  ok: boolean
+  settings: Settings
+  roles: Roles
+  tools: Tool[]
+  faq: FaqItem[]
+  improvementSuggestions: ImprovementSuggestion[]
+  templates: Record<string, TemplateItem>
+  workflows: Workflow[]
+  auditLogs: AuditLog[]
+  messageLogs: MessageLog[]
 }
 
 type BotStatus = {
@@ -17,42 +144,16 @@ type BotStatus = {
   prefix: string
   connection: string
   commandCount: number
-  lastConnectedAt: string | null
-  lastDisconnectReason: string | null
   uptimeSeconds: number
   registered: boolean
-  lastPairingRequestAt: string | null
-  qrAvailable?: boolean
-  lastQrAt?: string | null
+  botEnabled?: boolean
+  lastDisconnectReason: string | null
 }
 
-type LiveMeta = {
-  name: string
-  repoUrl: string
-  upstreamUrl: string
-  deployment: string
-  botHealthProxy: string
-  botMetaProxy: string
-  botTunnelConfigured: boolean
-  note: string
-}
-
-type BotCommandMeta = {
-  name: string
-  aliases: string[]
-  category: string
-  description: string
-  ownerOnly: boolean
-}
-
-type BotMeta = {
+type TestReply = {
   ok: boolean
-  bot: string
-  repoUrl: string
-  websiteUrl: string
-  healthUrl: string
-  localPairingUrl: string
-  commands?: BotCommandMeta[]
+  mode: string
+  reply: string
 }
 
 type PairingResult = {
@@ -63,11 +164,13 @@ type PairingResult = {
   message?: string
 }
 
-type ResetResult = {
+type BotControlResult = {
   ok: boolean
   message?: string
   restartScheduled?: boolean
   clearedSession?: boolean
+  loggedOut?: boolean
+  warning?: string
 }
 
 type BotQrResult = {
@@ -79,1478 +182,1303 @@ type BotQrResult = {
   message?: string
 }
 
-type ActivityEntry = {
-  id: string
-  text: string
-  time: string
-  tone: 'info' | 'success' | 'error'
-}
+type TabKey =
+  | 'overview'
+  | 'whatsapp'
+  | 'settings'
+  | 'tools'
+  | 'knowledge'
+  | 'roles'
+  | 'logs'
+  | 'integrations'
 
-type InspectorResult = {
-  label: string
-  payload: string
-  tone: 'info' | 'success' | 'error'
-}
+const tabs: Array<{ key: TabKey; label: string }> = [
+  { key: 'overview', label: 'Ringkasan' },
+  { key: 'whatsapp', label: 'Hubungkan WA' },
+  { key: 'settings', label: 'Pengaturan' },
+  { key: 'tools', label: 'Peralatan' },
+  { key: 'knowledge', label: 'FAQ & Template' },
+  { key: 'roles', label: 'Peran' },
+  { key: 'logs', label: 'Log' },
+  { key: 'integrations', label: 'Integrasi' },
+]
 
-const ADMIN_KEY_STORAGE = 'mybeebot-admin-key'
-const MAX_ACTIVITY = 10
-
-const commandDescriptions: Record<string, string> = {
-  '.menu': 'Buka daftar perintah utama.',
-  '.help': 'Ringkasan perintah yang aktif.',
-  '.ping': 'Cek latency dan respons bot.',
-  '.alive': 'Lihat identitas dan status bot.',
-  '.profile': 'Lihat profil singkat pengirim.',
-  '.stats': 'Lihat statistik runtime dan fitur bot.',
-  '.owner': 'Tampilkan info owner.',
-  '.repo': 'Buka repository project.',
-  '.uptime': 'Lihat lama bot berjalan.',
-  '.rules': 'Tampilkan aturan pemakaian.',
-  '.donate': 'Info dukungan dan donasi.',
-  '.id': 'Lihat ID chat dan pengirim.',
-  '.groupinfo': 'Info grup saat ini.',
-  '.admins': 'Tandai admin grup.',
-  '.tagall': 'Tandai semua anggota.',
-  '.hidetag': 'Mention semua anggota secara tersembunyi.',
-  '.echo': 'Tes balasan cepat.',
-  '.reload': 'Muat ulang perintah untuk owner.',
-  '.ai': 'Tanya AI langsung dari chat.',
-  '.aireply': 'Aktifkan AI reply otomatis per grup.',
-  '.anticall': 'Atur auto-reject panggilan masuk.',
-  '.ytmp3': 'Unduh audio dari link video.',
-  '.ytmp4': 'Unduh video dari link.',
-  '.sticker': 'Buat stiker dari gambar atau video.',
-  '.toimg': 'Ubah stiker menjadi gambar.',
-  '.tomp3': 'Ubah video atau audio menjadi MP3.',
-  '.tovn': 'Ubah video atau audio menjadi voice note.',
-  '.premium': 'Cek atau kelola user premium.',
-  '.ownerpanel': 'Ringkasan kontrol owner bot.',
-  '.antilink': 'Atur proteksi link per grup.',
-  '.antispam': 'Atur penjaga anti-spam per grup.',
-  '.antibadword': 'Aktifkan filter kata terlarang grup.',
-  '.addbadword': 'Tambah kata terlarang ke grup.',
-  '.delbadword': 'Hapus kata terlarang dari grup.',
-  '.listbadword': 'Lihat daftar kata terlarang grup.',
-  '.autoresponder': 'Atur auto-responder per grup.',
-  '.setreply': 'Simpan balasan otomatis.',
-  '.delreply': 'Hapus balasan otomatis.',
-  '.listreply': 'Lihat daftar balasan otomatis.',
-}
-
-const commandExamples: Record<string, string> = {
-  '.add': '.add 6281234567890',
-  '.admins': '.admins',
-  '.menu': '.menu',
-  '.help': '.help',
-  '.ping': '.ping',
-  '.alive': '.alive',
-  '.profile': '.profile',
-  '.stats': '.stats',
-  '.close': '.close',
-  '.demote': '.demote @user',
-  '.goodbye': '.goodbye on',
-  '.groupconfig': '.groupconfig',
-  '.groupinfo': '.groupinfo',
-  '.hidetag': '.hidetag pesan diam-diam untuk semua',
-  '.ai': '.ai bikinkan caption promo kopi susu',
-  '.aireply': '.aireply on',
-  '.anticall': '.anticall on',
-  '.antilink': '.antilink warn',
-  '.antispam': '.antispam on',
-  '.antibadword': '.antibadword on',
-  '.addbadword': '.addbadword kasar',
-  '.autoresponder': '.autoresponder on',
-  '.delbadword': '.delbadword kasar',
-  '.delreply': '.delreply halo',
-  '.owner': '.owner',
-  '.kick': '.kick @user',
-  '.linkgroup': '.linkgroup',
-  '.listreply': '.listreply',
-  '.listbadword': '.listbadword',
-  '.open': '.open',
-  '.ownerpanel': '.ownerpanel',
-  '.premium': '.premium list',
-  '.promote': '.promote @user',
-  '.repo': '.repo',
-  '.setreply': '.setreply halo|Halo juga, ada yang bisa dibantu?',
-  '.sticker': '.sticker',
-  '.toimg': '.toimg',
-  '.tomp3': '.tomp3',
-  '.tovn': '.tovn',
-  '.uptime': '.uptime',
-  '.rules': '.rules',
-  '.setdesc': '.setdesc Deskripsi grup baru',
-  '.setsubject': '.setsubject Nama Grup Baru',
-  '.welcome': '.welcome on',
-  '.donate': '.donate',
-  '.id': '.id',
-  '.tagall': '.tagall Perhatian semuanya',
-  '.echo': '.echo halo',
-  '.reload': '.reload',
-  '.ytmp3': '.ytmp3 https://youtu.be/xxxx',
-  '.ytmp4': '.ytmp4 https://youtu.be/xxxx',
-}
-
-const railItems = [
-  { short: 'OV', label: 'Ringkasan', section: 'overview' },
-  { short: 'PR', label: 'Hubungkan', section: 'pairing' },
-  { short: 'US', label: 'Pakai Bot', section: 'use' },
-  { short: 'CM', label: 'Perintah', section: 'commands' },
-  { short: 'API', label: 'API', section: 'api' },
-  { short: 'LG', label: 'Aktivitas', section: 'activity' },
-] as const
-
-const endpointCatalog = [
+const adminToolSuites = [
   {
-    key: 'status',
-    label: 'Status edge',
-    method: 'GET',
-    path: '/api/status',
-    description: 'Rute Cloudflare, runtime, dan daftar perintah.',
+    name: 'Pengelola Peralatan',
+    channel: 'Web + WhatsApp',
+    detail: 'Daftar perintah, metadata, aktif/nonaktif, terakhir dipakai, dan jumlah galat.',
   },
   {
-    key: 'meta',
-    label: 'Metadata edge',
-    method: 'GET',
-    path: '/api/meta',
-    description: 'Metadata deploy dan konfigurasi proxy.',
+    name: 'Pengelola Pengaturan',
+    channel: 'Web + WhatsApp',
+    detail: 'Status bot, prefix, jam aktif, delay balasan, improve mode, balasan otomatis, dan oper ke admin.',
   },
   {
-    key: 'bot-health',
-    label: 'Kesehatan bot',
-    method: 'GET',
-    path: '/api/bot-health',
-    description: 'Status socket bot saat ini dan kesiapan pairing.',
+    name: 'Router Smart Reply',
+    channel: 'Rule dulu',
+    detail: 'FAQ, template, dan handoff menjadi jalur utama balasan yang konsisten.',
   },
   {
-    key: 'bot-meta',
-    label: 'Metadata bot',
-    method: 'GET',
-    path: '/api/bot-meta',
-    description: 'Metadata runtime Node di balik proxy.',
+    name: 'FAQ / Basis Pengetahuan',
+    channel: 'Web + /faq',
+    detail: 'Tambah/hapus FAQ, pencocokan kata kunci, dan tes balasan dari dashboard.',
   },
-] as const
+  {
+    name: 'Pusat Template',
+    channel: 'Web + /template',
+    detail: 'Template welcome, handoff, dan pesan operasional yang bisa diedit.',
+  },
+  {
+    name: 'Mesin Workflow',
+    channel: 'Mesin berjalan',
+    detail: 'pesan masuk -> intent -> perintah/FAQ/template -> izin -> eksekusi -> log -> balasan.',
+  },
+  {
+    name: 'Jejak Audit',
+    channel: 'Mesin berjalan',
+    detail: 'Semua perubahan pengaturan, role, peralatan, FAQ, dan template masuk log audit.',
+  },
+  {
+    name: 'Lab Integrasi',
+    channel: 'Web',
+    detail: 'URL dasar API, URL webhook, secret webhook, dan flag integrasi fitur.',
+  },
+  {
+    name: 'Perintah Admin WhatsApp',
+    channel: '/settings',
+    detail: '/tool, /set, /faq, /template, /addadmin, /deladmin, /statusbot, /reload.',
+  },
+]
 
-function formatUptime(seconds: number | undefined) {
-  if (!seconds) {
-    return '0m'
-  }
-
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-
-  if (hours > 0) {
-    return `${hours}j ${minutes}m`
-  }
-
-  return `${minutes}m`
+const emptySettings: Settings = {
+  botEnabled: true,
+  antiCall: true,
+  commandPrefixes: ['.', '/'],
+  activeHours: {
+    enabled: false,
+    timezone: 'Asia/Jakarta',
+    start: '08:00',
+    end: '21:00',
+  },
+  autoReply: {
+    enabled: true,
+    mode: 'faq-first',
+  },
+  replyTiming: {
+    enabled: true,
+    delaySeconds: 2,
+  },
+  improvement: {
+    enabled: true,
+    minRepeats: 2,
+    suggestionLimit: 5,
+  },
+  ai: {
+    enabled: false,
+    systemPrompt: '',
+    tone: '',
+    replyStyle: '',
+    maxResponseLength: 400,
+    fallbackMode: 'handoff',
+    allowedFeatures: ['faq', 'template', 'summary'],
+    escalationRules: '',
+  },
+  welcomeMessage: '',
+  fallbackMessage: '',
+  handoffMessage: '',
+  commandKeywords: {},
+  integrations: {
+    webhook: {
+      enabled: false,
+      url: '',
+      secret: '',
+    },
+    apiBaseUrl: '',
+  },
 }
 
-function formatClock(value: string | null | undefined) {
+function secondsToRuntime(seconds?: number) {
+  const total = Number(seconds || 0)
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  return hours ? `${hours}j ${minutes}m` : `${minutes}m`
+}
+
+function formatDate(value?: string | null) {
   if (!value) {
-    return 'menunggu'
+    return '-'
   }
 
-  return new Date(value).toLocaleTimeString()
+  return new Date(value).toLocaleString('id-ID')
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) {
-    return 'belum ada'
+function formatConnection(value?: string | null) {
+  const labels: Record<string, string> = {
+    open: 'terhubung',
+    connecting: 'menghubungkan',
+    closed: 'terputus',
+    resetting: 'reset',
+    booting: 'memulai',
+    'boot-failed': 'gagal mulai',
   }
 
-  return new Date(value).toLocaleString()
+  return labels[String(value || '')] || 'tidak diketahui'
 }
 
-function getGreeting() {
-  const hour = new Date().getHours()
-
-  if (hour < 12) {
-    return 'Pagi'
+function formatWorkflowStep(step: string) {
+  const labels: Record<string, string> = {
+    incoming_message: 'pesan masuk',
+    parse_command: 'parsing perintah',
+    intent_detection: 'deteksi intent',
+    command_mode: 'mode perintah',
+    role_check: 'cek role',
+    settings_check: 'cek pengaturan',
+    workflow_router: 'router workflow',
+    tool_or_reply_mode: 'pilih peralatan/balasan',
+    reply_execute: 'eksekusi balasan',
+    execute: 'eksekusi',
+    log_result: 'catat hasil',
+    send_response: 'kirim respons',
   }
 
-  if (hour < 18) {
-    return 'Siang'
-  }
-
-  return 'Malam'
+  return labels[step] || step.replaceAll('_', ' ')
 }
 
-function getProgress(connection?: string) {
-  if (connection === 'open') {
-    return 100
-  }
-
-  if (connection === 'connecting') {
-    return 68
-  }
-
-  if (connection === 'closed') {
-    return 26
-  }
-
-  if (connection === 'resetting') {
-    return 14
-  }
-
-  return 18
+function cloneSettings(settings: Settings): Settings {
+  return JSON.parse(JSON.stringify(settings)) as Settings
 }
 
 function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, '')
-
   if (!digits) {
     return ''
   }
 
-  if (digits.startsWith('0')) {
-    return `62${digits.slice(1)}`
-  }
-
-  return digits
+  return digits.startsWith('0') ? `62${digits.slice(1)}` : digits
 }
 
 function App() {
-  const [status, setStatus] = useState<LiveStatus | null>(null)
+  const [session, setSession] = useState<AuthSession | null>(null)
+  const [loginKey, setLoginKey] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [settingsDraft, setSettingsDraft] = useState<Settings>(emptySettings)
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
-  const [liveMeta, setLiveMeta] = useState<LiveMeta | null>(null)
-  const [botMeta, setBotMeta] = useState<BotMeta | null>(null)
-  const [statusError, setStatusError] = useState<string | null>(null)
-  const [botStatusError, setBotStatusError] = useState<string | null>(null)
-  const [metaError, setMetaError] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const [isBusy, setIsBusy] = useState(false)
+  const [faqQuestion, setFaqQuestion] = useState('')
+  const [faqAnswer, setFaqAnswer] = useState('')
+  const [editingFaqId, setEditingFaqId] = useState<string | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateBody, setTemplateBody] = useState('')
+  const [editingTemplateName, setEditingTemplateName] = useState<string | null>(null)
+  const [roleNumber, setRoleNumber] = useState('')
+  const [roleKind, setRoleKind] = useState<'admins' | 'owners'>('admins')
+  const [testMessage, setTestMessage] = useState('halo, jam operasional?')
+  const [testReplyResult, setTestReplyResult] = useState<TestReply | null>(null)
+  const [keywordCommand, setKeywordCommand] = useState('menu')
+  const [keywordValue, setKeywordValue] = useState('menu')
+  const [webhookSecret, setWebhookSecret] = useState('')
   const [pairPhone, setPairPhone] = useState('087830300031')
-  const [adminKey, setAdminKey] = useState(() => {
-    if (typeof window === 'undefined') {
-      return ''
+  const [pairingResult, setPairingResult] = useState<PairingResult | null>(null)
+  const [pairingError, setPairingError] = useState('')
+  const [qrImage, setQrImage] = useState('')
+  const [qrMeta, setQrMeta] = useState<BotQrResult | null>(null)
+  const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
+  const [isLoadingQr, setIsLoadingQr] = useState(false)
+  const [isResettingSession, setIsResettingSession] = useState(false)
+  const [isLoggingOutDevice, setIsLoggingOutDevice] = useState(false)
+
+  const isAuthenticated = Boolean(session?.authenticated)
+
+  const readJson = useCallback(async <T,>(url: string, init?: RequestInit) => {
+    const response = await fetch(url, init)
+    const text = await response.text()
+    let payload: (T & { message?: string }) | null = null
+
+    if (text) {
+      try {
+        payload = JSON.parse(text) as T & { message?: string }
+      } catch {
+        payload = { message: text } as T & { message?: string }
+      }
     }
 
-    return window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? ''
-  })
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeSection, setActiveSection] = useState('overview')
-  const [pairingResult, setPairingResult] = useState<PairingResult | null>(null)
-  const [pairingError, setPairingError] = useState<string | null>(null)
-  const [resetNotice, setResetNotice] = useState<string | null>(null)
-  const [qrImage, setQrImage] = useState<string | null>(null)
-  const [qrMeta, setQrMeta] = useState<BotQrResult | null>(null)
-  const [qrError, setQrError] = useState<string | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isResetting, setIsResetting] = useState(false)
-  const [isLoadingQr, setIsLoadingQr] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [copyNotice, setCopyNotice] = useState<string | null>(null)
-  const [activity, setActivity] = useState<ActivityEntry[]>([])
-  const [inspector, setInspector] = useState<InspectorResult | null>(null)
-  const [inspectingKey, setInspectingKey] = useState<string | null>(null)
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+    if (!response.ok) {
+      throw new Error(payload?.message || `${url} gagal dengan status ${response.status}`)
+    }
 
-  const previousSnapshot = useRef<string>('')
-
-  const addActivity = useCallback((text: string, tone: ActivityEntry['tone']) => {
-    setActivity((current) => [
-      {
-        id: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
-        text,
-        time: new Date().toISOString(),
-        tone,
-      },
-      ...current,
-    ].slice(0, MAX_ACTIVITY))
+    return (payload || {}) as T
   }, [])
 
-  async function copyText(value: string, label: string) {
-    if (!value) {
-      addActivity(`${label} kosong.`, 'error')
+  const refresh = useCallback(async () => {
+    if (!isAuthenticated) {
       return
     }
 
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopyNotice(`${label} disalin`)
-      addActivity(`${label} berhasil disalin.`, 'success')
-      window.setTimeout(() => {
-        setCopyNotice((current) => (current === `${label} disalin` ? null : current))
-      }, 2200)
-    } catch {
-      setCopyNotice(null)
-      addActivity(`Gagal menyalin ${label}.`, 'error')
-    }
-  }
+    const [snapshotResult, healthResult] = await Promise.allSettled([
+      readJson<Snapshot>('/api/admin/snapshot'),
+      readJson<BotStatus>('/api/bot-health'),
+    ])
 
-  function jumpToSection(section: string) {
-    setActiveSection(section)
-    document.getElementById(`section-${section}`)?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    })
-  }
-
-  async function readJson<T>(url: string, init?: RequestInit) {
-    const response = await fetch(url, init)
-    const text = await response.text()
-    const payload = text ? (JSON.parse(text) as T & { message?: string }) : ({} as T)
-
-    if (!response.ok) {
-      const message =
-        typeof payload === 'object' && payload && 'message' in payload
-          ? String(payload.message || '')
-          : ''
-
-      throw new Error(message || `${url} gagal dengan status ${response.status}`)
-    }
-
-    return payload as T
-  }
-
-  const refreshAll = useCallback(async (options?: { announce?: boolean }) => {
-    setIsRefreshing(true)
-
-    const [statusResult, botStatusResult, liveMetaResult, botMetaResult] =
-      await Promise.allSettled([
-        readJson<LiveStatus>('/api/status'),
-        readJson<BotStatus>('/api/bot-health'),
-        readJson<LiveMeta>('/api/meta'),
-        readJson<BotMeta>('/api/bot-meta'),
-      ])
-
-    if (statusResult.status === 'fulfilled') {
-      setStatus(statusResult.value)
-      setStatusError(null)
+    if (snapshotResult.status === 'fulfilled') {
+      const nextSnapshot = snapshotResult.value
+      const draft = cloneSettings(nextSnapshot.settings)
+      draft.integrations.webhook.secret = ''
+      setSnapshot(nextSnapshot)
+      setSettingsDraft(draft)
+      setError('')
     } else {
-      setStatusError(statusResult.reason instanceof Error ? statusResult.reason.message : 'Gagal menjangkau endpoint status live.')
+      setError(snapshotResult.reason instanceof Error ? snapshotResult.reason.message : 'Gagal memuat snapshot admin.')
     }
 
-    if (botStatusResult.status === 'fulfilled') {
-      setBotStatus(botStatusResult.value)
-      setBotStatusError(null)
-    } else {
-      setBotStatusError(botStatusResult.reason instanceof Error ? botStatusResult.reason.message : 'Gagal menjangkau proxy kesehatan bot.')
+    if (healthResult.status === 'fulfilled') {
+      setBotStatus(healthResult.value)
+    }
+  }, [isAuthenticated, readJson])
+
+  const toolSummary = useMemo(() => {
+    const tools = snapshot?.tools || []
+    const enabled = tools.filter((tool) => tool.enabled).length
+    const errors = tools.reduce((total, tool) => total + tool.error_count, 0)
+    return { total: tools.length, enabled, errors }
+  }, [snapshot])
+
+  const toolCategories = useMemo(() => {
+    const rows = new Map<string, { total: number; enabled: number }>()
+    for (const tool of snapshot?.tools || []) {
+      const row = rows.get(tool.category) || { total: 0, enabled: 0 }
+      row.total += 1
+      row.enabled += tool.enabled ? 1 : 0
+      rows.set(tool.category, row)
     }
 
-    if (liveMetaResult.status === 'fulfilled') {
-      setLiveMeta(liveMetaResult.value)
-      setMetaError(null)
-    } else {
-      setMetaError(liveMetaResult.reason instanceof Error ? liveMetaResult.reason.message : 'Gagal menjangkau metadata edge.')
-    }
-
-    if (botMetaResult.status === 'fulfilled') {
-      setBotMeta(botMetaResult.value)
-      setMetaError(null)
-    } else if (liveMetaResult.status !== 'rejected') {
-      setMetaError(botMetaResult.reason instanceof Error ? botMetaResult.reason.message : 'Gagal menjangkau metadata bot.')
-    }
-
-    setLastSyncedAt(new Date().toISOString())
-
-    if (options?.announce) {
-      addActivity('Dashboard berhasil sinkron dari endpoint live.', 'info')
-    }
-
-    setIsRefreshing(false)
-  }, [addActivity])
+    return Array.from(rows.entries()).sort((left, right) => left[0].localeCompare(right[0]))
+  }, [snapshot])
 
   useEffect(() => {
-    const refresh = () => {
-      void refreshAll()
+    async function checkSession() {
+      try {
+        const current = await readJson<AuthSession>('/api/auth/session')
+        setSession(current)
+      } catch {
+        setSession({ authenticated: false, configured: true })
+      } finally {
+        setIsCheckingAuth(false)
+      }
     }
 
-    const timeout = window.setTimeout(refresh, 0)
-    const interval = window.setInterval(refresh, 8000)
+    void checkSession()
+  }, [readJson])
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      void refresh()
+    }, 0)
+    const interval = window.setInterval(() => {
+      void refresh()
+    }, 10000)
 
     return () => {
       window.clearTimeout(timeout)
       window.clearInterval(interval)
     }
-  }, [refreshAll])
+  }, [isAuthenticated, refresh])
 
-  useEffect(() => {
-    if (!adminKey) {
-      window.localStorage.removeItem(ADMIN_KEY_STORAGE)
-      return
-    }
-
-    window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey)
-  }, [adminKey])
-
-  useEffect(() => {
-    if (!status || !botStatus) {
-      return
-    }
-
-    const snapshot = [
-      status.status,
-      botStatus.connection,
-      botStatus.registered ? 'registered' : 'unregistered',
-      botStatus.lastDisconnectReason ?? 'none',
-    ].join('|')
-
-    if (!previousSnapshot.current) {
-      previousSnapshot.current = snapshot
-      addActivity('Dashboard berhasil terhubung ke runtime bot live.', 'success')
-      return
-    }
-
-    if (previousSnapshot.current !== snapshot) {
-      previousSnapshot.current = snapshot
-      addActivity(
-        `Runtime berubah ke ${botStatus.connection}. Terdaftar: ${botStatus.registered ? 'ya' : 'tidak'}.`,
-        botStatus.connection === 'open' ? 'success' : 'info',
-      )
-    }
-  }, [status, botStatus, addActivity])
-
-  const greeting = getGreeting()
-  const searchNeedle = searchQuery.trim().toLowerCase()
-  const edgeProgress = status?.status === 'live' ? 100 : 54
-  const runtimeProgress = getProgress(botStatus?.connection)
-  const pairingProgress = botStatus?.registered ? 100 : botStatus?.qrAvailable ? 62 : 34
-  const commandProgress = botStatus?.commandCount
-    ? Math.min(100, 44 + botStatus.commandCount * 8)
-    : 52
-  const overallReadiness = Math.round(
-    (edgeProgress + runtimeProgress + pairingProgress + commandProgress) / 4,
-  )
-  const activeCommands = botMeta?.commands?.length
-    ? botMeta.commands.map((command) => `.${command.name}`)
-    : status?.commands?.length
-      ? status.commands
-      : Object.keys(commandDescriptions)
-  const normalizedPhone = normalizePhone(pairPhone)
-  const isLinked = Boolean(botStatus?.registered)
-  const isBotReady = isLinked && botStatus?.connection === 'open'
-  const starterCommands = ['.menu', '.ping', '.alive', '.profile']
-
-  const filteredCommands = activeCommands.filter((command) => {
-    if (!searchNeedle) {
-      return true
-    }
-
-    return (
-      command.toLowerCase().includes(searchNeedle) ||
-      String(commandDescriptions[command] || '').toLowerCase().includes(searchNeedle) ||
-      String(commandExamples[command] || '').toLowerCase().includes(searchNeedle)
-    )
-  })
-
-  const filteredEndpoints = endpointCatalog.filter((endpoint) => {
-    if (!searchNeedle) {
-      return true
-    }
-
-    return (
-      endpoint.label.toLowerCase().includes(searchNeedle) ||
-      endpoint.path.toLowerCase().includes(searchNeedle) ||
-      endpoint.description.toLowerCase().includes(searchNeedle)
-    )
-  })
-
-  const workflowRows = [
-    {
-      label: 'Edge worker bundle',
-      detail: status?.domain ?? 'Menunggu rute',
-      percent: edgeProgress,
-      state: status?.status ?? 'Menyinkronkan',
-    },
-    {
-      label: 'Bot health proxy',
-      detail: liveMeta?.botHealthProxy ?? '/api/bot-health',
-      percent: botStatus ? 100 : 40,
-      state: botStatus ? 'Aktif' : 'Menunggu',
-    },
-    {
-      label: 'Socket runtime',
-      detail: botStatus?.connection ?? 'Booting',
-      percent: runtimeProgress,
-      state: botStatus?.connection ?? 'Mengantre',
-    },
-    {
-      label: 'Permukaan pairing',
-      detail: botStatus?.qrAvailable ? 'Kode + QR siap' : 'Menunggu panel pairing',
-      percent: pairingProgress,
-      state: botStatus?.registered ? 'Siap' : 'Perlu aksi',
-    },
-  ]
-
-  const pairingChecklist = [
-    {
-      label: 'Buka dashboard dengan admin key',
-      done: Boolean(adminKey),
-    },
-    {
-      label: 'Proxy runtime bisa dijangkau',
-      done: Boolean(botStatus && botStatus.connection !== 'booting'),
-    },
-    {
-      label: 'Generate kode atau muat QR',
-      done: Boolean(pairingResult?.code || botStatus?.qrAvailable || qrImage),
-    },
-    {
-      label: 'WhatsApp sudah tertaut',
-      done: Boolean(botStatus?.registered),
-    },
-  ]
-
-  const runtimeFeed = [
-    `Route edge: ${status?.status ?? 'mengecek'}`,
-    `Socket: ${botStatus?.connection ?? 'booting'}`,
-    `Terdaftar: ${botStatus?.registered ? 'ya' : 'tidak'}`,
-    `QR tersedia: ${botStatus?.qrAvailable ? 'ya' : 'tidak'}`,
-    `Permintaan pairing terakhir: ${formatClock(botStatus?.lastPairingRequestAt)}`,
-    `Disconnect terakhir: ${botStatus?.lastDisconnectReason ?? 'tidak ada'}`,
-  ].filter((entry) => !searchNeedle || entry.toLowerCase().includes(searchNeedle))
-
-  const controlLinks = [
-    {
-      label: 'Website',
-      href: botMeta?.websiteUrl ?? 'https://mybeebot.myarzl-visualdesign.my.id',
-    },
-    {
-      label: 'Repo',
-      href: liveMeta?.repoUrl ?? 'https://github.com/myarzlvisualdesign-blip/Mybeebot',
-    },
-    {
-      label: 'Bot health',
-      href: liveMeta?.botHealthProxy ?? 'https://mybeebot.myarzl-visualdesign.my.id/api/bot-health',
-    },
-    {
-      label: 'Bot meta',
-      href: liveMeta?.botMetaProxy ?? 'https://mybeebot.myarzl-visualdesign.my.id/api/bot-meta',
-    },
-  ].filter((link) => !searchNeedle || `${link.label} ${link.href}`.toLowerCase().includes(searchNeedle))
-
-  const totalMatches = filteredCommands.length + filteredEndpoints.length + runtimeFeed.length + controlLinks.length
-
-  function getCommandDescription(command: string) {
-    const runtimeDescription = botMeta?.commands?.find(
-      (entry) => `.${entry.name}` === command,
-    )?.description
-
-    return runtimeDescription || commandDescriptions[command] || 'Perintah inti aktif di runtime.'
-  }
-
-  function getCommandExample(command: string) {
-    return commandExamples[command] || command
-  }
-
-  const nextAction = (() => {
-    if (!adminKey) {
-      return {
-        title: 'Tempel admin key dulu',
-        body: 'Kontrol dashboard tetap terkunci sampai admin key diisi di panel pairing.',
-        primaryLabel: 'Buka Panel Koneksi',
-        primaryAction: () => jumpToSection('pairing'),
-        secondaryLabel: 'Segarkan Status',
-        secondaryAction: () => void refreshAll({ announce: true }),
-      }
-    }
-
-    if (isBotReady) {
-      return {
-        title: 'Bot sudah terhubung',
-        body: 'Buka WhatsApp lalu kirim .menu, .ping, atau .alive untuk mulai pakai bot sekarang juga.',
-        primaryLabel: 'Salin .menu',
-        primaryAction: () => void copyText('.menu', '.menu starter'),
-        secondaryLabel: 'Ke Bagian Pakai Bot',
-        secondaryAction: () => jumpToSection('use'),
-      }
-    }
-
-    if (botStatus?.qrAvailable) {
-      return {
-        title: 'Hubungkan WhatsApp sekarang',
-        body: 'Kalau pakai HP yang sama, pakai kode pairing. Kalau buka dashboard di laptop, pakai QR lalu scan dari Linked Devices.',
-        primaryLabel: 'Ambil Kode Pairing',
-        primaryAction: () => void handleGeneratePairingCode(),
-        secondaryLabel: 'Tampilkan QR',
-        secondaryAction: () => void handleLoadQr(),
-      }
-    }
-
-    return {
-      title: 'Perbaiki sesi dulu',
-      body: 'Kalau runtime macet atau QR belum muncul, reset sesi sekali lalu tunggu beberapa detik sampai konek ulang dengan bersih.',
-      primaryLabel: 'Reset Sesi',
-      primaryAction: () => void handleResetSession(),
-        secondaryLabel: 'Segarkan Status',
-        secondaryAction: () => void refreshAll({ announce: true }),
-    }
-  })()
-
-  async function inspectEndpoint(
-    key: string,
-    label: string,
-    path: string,
-    init?: RequestInit,
-  ) {
-    setInspectingKey(key)
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsBusy(true)
+    setAuthError('')
 
     try {
-      const payload = await readJson<Record<string, unknown>>(path, init)
-      setInspector({
-        label,
-        payload: JSON.stringify(payload, null, 2),
-        tone: 'success',
+      const nextSession = await readJson<AuthSession>('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ adminKey: loginKey }),
       })
-      addActivity(`${label} berhasil dicek dari dashboard.`, 'info')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Pemeriksaan endpoint gagal.'
-      setInspector({
-        label,
-        payload: message,
-        tone: 'error',
-      })
-      addActivity(`${label} gagal dicek.`, 'error')
+      setSession(nextSession)
+      setLoginKey('')
+      setNotice('Login berhasil.')
+    } catch (loginError) {
+      setAuthError(loginError instanceof Error ? loginError.message : 'Login gagal.')
     } finally {
-      setInspectingKey(null)
+      setIsBusy(false)
     }
   }
 
-  async function handleGeneratePairingCode() {
+  async function handleLogout() {
+    await readJson<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }).catch(() => null)
+    setSession({ authenticated: false, configured: true })
+    setSnapshot(null)
+    setBotStatus(null)
+  }
+
+  async function handleGeneratePairing(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     const phone = normalizePhone(pairPhone)
     if (!phone) {
-      setPairingError('Nomor telepon wajib diisi.')
+      setPairingError('Nomor WhatsApp wajib diisi.')
       return
     }
 
-    if (!adminKey) {
-      setPairingError('Admin key wajib diisi.')
-      return
-    }
-
-    setIsGenerating(true)
-    setPairingError(null)
-    setQrError(null)
-    setResetNotice(null)
-    setActiveSection('pairing')
+    setIsGeneratingPairing(true)
+    setPairingError('')
+    setPairingResult(null)
 
     try {
-      const payload = await readJson<PairingResult>('/api/bot-pairing', {
+      const result = await readJson<PairingResult>('/api/bot-pairing', {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone,
-          adminKey,
-        }),
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone }),
       })
-
-      setPairingResult(payload)
-      setInspector({
-        label: 'POST /api/bot-pairing',
-        payload: JSON.stringify(payload, null, 2),
-        tone: 'success',
-      })
-      addActivity(`Kode pairing berhasil dibuat untuk ${payload.phone || phone}.`, 'success')
-      await refreshAll()
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Gagal membuat kode pairing.'
-
-      setPairingResult(null)
-      setPairingError(message)
-      setInspector({
-        label: 'POST /api/bot-pairing',
-        payload: message,
-        tone: 'error',
-      })
-      addActivity('Pembuatan kode pairing gagal.', 'error')
+      setPairingResult(result)
+      setNotice('Kode pairing dibuat. Buka WhatsApp lalu masuk ke Perangkat tertaut.')
+      await refresh()
+    } catch (pairingErrorValue) {
+      setPairingError(
+        pairingErrorValue instanceof Error ? pairingErrorValue.message : 'Gagal membuat kode pairing.',
+      )
     } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  async function handleResetSession() {
-    if (!adminKey) {
-      setPairingError('Admin key wajib diisi.')
-      return
-    }
-
-    setIsResetting(true)
-    setPairingError(null)
-    setQrError(null)
-
-    try {
-      const payload = await readJson<ResetResult>('/api/bot-reset', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          adminKey,
-        }),
-      })
-
-      setPairingResult(null)
-      setQrImage(null)
-      setQrMeta(null)
-      setResetNotice(payload.message || 'Sesi dibersihkan. Tunggu beberapa detik lalu coba lagi.')
-      setInspector({
-        label: 'POST /api/bot-reset',
-        payload: JSON.stringify(payload, null, 2),
-        tone: 'success',
-      })
-      addActivity('Sesi bot berhasil di-reset dari dashboard.', 'success')
-      window.setTimeout(() => {
-        void refreshAll({ announce: true })
-      }, 3500)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Gagal mereset sesi bot.'
-
-      setResetNotice(null)
-      setPairingError(message)
-      setInspector({
-        label: 'POST /api/bot-reset',
-        payload: message,
-        tone: 'error',
-      })
-      addActivity('Reset sesi bot gagal.', 'error')
-    } finally {
-      setIsResetting(false)
+      setIsGeneratingPairing(false)
     }
   }
 
   async function handleLoadQr() {
-    if (!adminKey) {
-      setQrError('Admin key wajib diisi.')
-      return
-    }
-
     setIsLoadingQr(true)
-    setPairingError(null)
-    setQrError(null)
-    setResetNotice(null)
-    setActiveSection('pairing')
+    setPairingError('')
+    setQrImage('')
+    setQrMeta(null)
 
     try {
-      const payload = await readJson<BotQrResult>('/api/bot-qr', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          adminKey,
-        }),
-      })
-
-      if (!payload.qr) {
-        throw new Error(payload.message || 'QR belum tersedia.')
+      const result = await readJson<BotQrResult>('/api/bot-qr', { method: 'POST' })
+      setQrMeta(result)
+      if (result.qr) {
+        setQrImage(await QRCode.toDataURL(result.qr, { margin: 2, width: 260 }))
       }
-
-      const image = await QRCode.toDataURL(payload.qr, {
-        width: 280,
-        margin: 1,
-        color: {
-          dark: '#edf4ff',
-          light: '#0000',
-        },
-      })
-
-      setQrImage(image)
-      setQrMeta(payload)
-      setInspector({
-        label: 'POST /api/bot-qr',
-        payload: JSON.stringify(payload, null, 2),
-        tone: 'success',
-      })
-      addActivity('QR desktop berhasil dimuat dari dashboard.', 'success')
-      await refreshAll()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Gagal memuat QR.'
-
-      setQrImage(null)
-      setQrMeta(null)
-      setQrError(message)
-      setInspector({
-        label: 'POST /api/bot-qr',
-        payload: message,
-        tone: 'error',
-      })
-      addActivity('Pemuatan QR desktop gagal.', 'error')
+      await refresh()
+    } catch (qrErrorValue) {
+      setPairingError(qrErrorValue instanceof Error ? qrErrorValue.message : 'Gagal memuat QR.')
     } finally {
       setIsLoadingQr(false)
     }
   }
 
-  const pairingMessage =
-    pairingError || botStatusError || qrError
-      ? pairingError || botStatusError || qrError
-      : resetNotice
-        ? resetNotice
-      : pairingResult?.code
-        ? `Masukkan kode ${pairingResult.code} sekarang juga di menu Linked Devices WhatsApp.`
-        : 'Pakai tombol kode pairing untuk link via nomor, atau pakai QR kalau scan dari desktop lebih gampang.'
+  async function handleResetSession() {
+    if (!window.confirm('Reset sesi akan memutus pairing lokal dan bot restart. Lanjut?')) {
+      return
+    }
+
+    setIsResettingSession(true)
+    setPairingError('')
+
+    try {
+      const result = await readJson<BotControlResult>('/api/bot-reset', { method: 'POST' })
+      setNotice(result.message || 'Session direset. Tunggu runtime restart.')
+      await refresh()
+    } catch (resetErrorValue) {
+      setPairingError(
+        resetErrorValue instanceof Error ? resetErrorValue.message : 'Gagal reset session.',
+      )
+    } finally {
+      setIsResettingSession(false)
+    }
+  }
+
+  async function handleLogoutDevice() {
+    if (!window.confirm('Keluarkan perangkat akan melepas WhatsApp dari bot. Lanjut?')) {
+      return
+    }
+
+    setIsLoggingOutDevice(true)
+    setPairingError('')
+
+    try {
+      const result = await readJson<BotControlResult>('/api/bot-logout-device', { method: 'POST' })
+      setNotice(result.message || 'Device logout. Pairing ulang setelah runtime restart.')
+      await refresh()
+    } catch (logoutErrorValue) {
+      setPairingError(
+        logoutErrorValue instanceof Error ? logoutErrorValue.message : 'Gagal logout device.',
+      )
+    } finally {
+      setIsLoggingOutDevice(false)
+    }
+  }
+
+  function updateSettings(mutator: (draft: Settings) => void) {
+    setSettingsDraft((current) => {
+      const next = cloneSettings(current)
+      mutator(next)
+      return next
+    })
+  }
+
+  async function saveSettings() {
+    setIsBusy(true)
+    setError('')
+
+    const payload = cloneSettings(settingsDraft)
+    if (webhookSecret.trim()) {
+      payload.integrations.webhook.secret = webhookSecret.trim()
+    } else {
+      delete payload.integrations.webhook.secret
+    }
+
+    try {
+      await readJson<{ ok: boolean; settings: Settings }>('/api/admin/settings', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ settings: payload }),
+      })
+      setWebhookSecret('')
+      setNotice('Pengaturan tersimpan dan langsung dipakai runtime WhatsApp.')
+      await refresh()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Gagal menyimpan pengaturan.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function toggleTool(tool: Tool) {
+    setIsBusy(true)
+    setError('')
+
+    try {
+      await readJson<{ ok: boolean; tools: Tool[] }>(`/api/admin/tools/${encodeURIComponent(tool.id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: !tool.enabled }),
+      })
+      setNotice(`Peralatan ${tool.name} ${tool.enabled ? 'dinonaktifkan' : 'diaktifkan'}.`)
+      await refresh()
+    } catch (toolError) {
+      setError(toolError instanceof Error ? toolError.message : 'Gagal mengubah peralatan.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function toggleToolCategory(category: string, enabled: boolean) {
+    const tools = (snapshot?.tools || []).filter(
+      (tool) => tool.category === category && !tool.protected && tool.enabled !== enabled,
+    )
+
+    if (!tools.length) {
+      setNotice(`Tidak ada peralatan kategori ${category} yang perlu diubah.`)
+      return
+    }
+
+    setIsBusy(true)
+    setError('')
+
+    try {
+      await Promise.all(
+        tools.map((tool) =>
+          readJson<{ ok: boolean; tools: Tool[] }>(`/api/admin/tools/${encodeURIComponent(tool.id)}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+          }),
+        ),
+      )
+      setNotice(`Kategori ${category} ${enabled ? 'diaktifkan' : 'dinonaktifkan'}.`)
+      await refresh()
+    } catch (toolError) {
+      setError(toolError instanceof Error ? toolError.message : 'Gagal mengubah kategori peralatan.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function saveFaq(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsBusy(true)
+    setError('')
+
+    try {
+      await readJson(editingFaqId ? `/api/admin/faq/${encodeURIComponent(editingFaqId)}` : '/api/admin/faq', {
+        method: editingFaqId ? 'PATCH' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ question: faqQuestion, answer: faqAnswer }),
+      })
+      setFaqQuestion('')
+      setFaqAnswer('')
+      setEditingFaqId(null)
+      setNotice(editingFaqId ? 'FAQ diperbarui.' : 'FAQ ditambahkan.')
+      await refresh()
+    } catch (faqError) {
+      setError(faqError instanceof Error ? faqError.message : 'Gagal menyimpan FAQ.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  function editFaq(item: FaqItem) {
+    setEditingFaqId(item.id)
+    setFaqQuestion(item.question)
+    setFaqAnswer(item.answer)
+  }
+
+  function cancelFaqEdit() {
+    setEditingFaqId(null)
+    setFaqQuestion('')
+    setFaqAnswer('')
+  }
+
+  function applyImprovementSuggestion(item: ImprovementSuggestion) {
+    setEditingFaqId(null)
+    setFaqQuestion(item.question)
+    setFaqAnswer(item.suggestedAnswer || settingsDraft.handoffMessage || settingsDraft.fallbackMessage)
+    setActiveTab('knowledge')
+    setNotice(`Saran improve "${item.question}" dimasukkan ke form FAQ.`)
+  }
+
+  async function deleteFaq(id: string) {
+    await readJson(`/api/admin/faq/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (editingFaqId === id) {
+      cancelFaqEdit()
+    }
+    setNotice('FAQ dihapus.')
+    await refresh()
+  }
+
+  async function saveTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsBusy(true)
+    setError('')
+
+    try {
+      await readJson('/api/admin/templates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: templateName, body: templateBody }),
+      })
+      setTemplateName('')
+      setTemplateBody('')
+      setEditingTemplateName(null)
+      setNotice(editingTemplateName ? 'Template diperbarui.' : 'Template disimpan.')
+      await refresh()
+    } catch (templateError) {
+      setError(templateError instanceof Error ? templateError.message : 'Gagal menyimpan template.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  function editTemplate(template: TemplateItem) {
+    setEditingTemplateName(template.name)
+    setTemplateName(template.name)
+    setTemplateBody(template.body)
+  }
+
+  function cancelTemplateEdit() {
+    setEditingTemplateName(null)
+    setTemplateName('')
+    setTemplateBody('')
+  }
+
+  async function deleteTemplate(name: string) {
+    await readJson(`/api/admin/templates/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    if (editingTemplateName === name) {
+      cancelTemplateEdit()
+    }
+    setNotice('Template dihapus.')
+    await refresh()
+  }
+
+  async function saveKeyword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const commandKeywords = {
+      ...settingsDraft.commandKeywords,
+      [keywordCommand.trim().toLowerCase()]: keywordValue.trim().toLowerCase(),
+    }
+    updateSettings((draft) => {
+      draft.commandKeywords = commandKeywords
+    })
+    await readJson('/api/admin/settings', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ settings: { commandKeywords } }),
+    })
+    setNotice('Kata kunci perintah disimpan.')
+    await refresh()
+  }
+
+  async function addRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await readJson('/api/admin/roles', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ role: roleKind, number: roleNumber }),
+    })
+    setRoleNumber('')
+    setNotice('Role ditambahkan.')
+    await refresh()
+  }
+
+  async function deleteRole(role: 'admins' | 'owners', number: string) {
+    await readJson('/api/admin/roles', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ role, number }),
+    })
+    setNotice('Role dihapus.')
+    await refresh()
+  }
+
+  async function handleTestReply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const result = await readJson<TestReply>('/api/admin/test-reply', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: testMessage }),
+    })
+    setTestReplyResult(result)
+  }
+
+  if (isCheckingAuth) {
+    return <main className="center-shell">Memuat sesi admin...</main>
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="login-shell">
+        <form className="login-panel" onSubmit={handleLogin}>
+          <img src="/favicon.svg" alt="" className="brand-mark" />
+          <h1>Mybeebot Admin</h1>
+          <p>Masuk untuk mengelola pengaturan, registry peralatan, FAQ, template, peran, dan log mesin WhatsApp.</p>
+          <label>
+            Kunci admin
+            <input
+              type="password"
+              value={loginKey}
+              onChange={(event) => setLoginKey(event.target.value)}
+              placeholder="BOT_ADMIN_KEY"
+            />
+          </label>
+          {authError ? <p className="alert error">{authError}</p> : null}
+          <button type="submit" disabled={isBusy}>
+            Masuk
+          </button>
+        </form>
+      </main>
+    )
+  }
 
   return (
-    <div className="dashboard-shell">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
-      <div className="ambient ambient-three" />
+    <main className="app-shell">
+      <aside className="sidebar">
+        <button className="brand-button" type="button" onClick={() => setActiveTab('overview')}>
+          <img src="/favicon.svg" alt="" className="brand-mark" />
+          <span>
+            <strong>Mybeebot</strong>
+            <small>Dashboard admin</small>
+          </span>
+        </button>
+        <nav className="tab-list" aria-label="Bagian dashboard">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={activeTab === tab.key ? 'active' : ''}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+        <button className="secondary" type="button" onClick={() => void refresh()}>
+          Segarkan
+        </button>
+        <button className="danger" type="button" onClick={() => void handleLogout()}>
+          Keluar
+        </button>
+      </aside>
 
-      <div className="dashboard-frame">
-        <aside className="side-rail reveal">
-          <button type="button" className="brand-chip" onClick={() => jumpToSection('overview')}>
-            MB
-          </button>
-
-          <div className="rail-stack">
-            {railItems.map((item) => (
-              <button
-                key={item.section}
-                type="button"
-                className={`rail-button${activeSection === item.section ? ' active' : ''}`}
-                onClick={() => jumpToSection(item.section)}
-                title={item.label}
-              >
-                <span>{item.short}</span>
-              </button>
-            ))}
+      <section className="workspace">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Satu sumber data</p>
+            <h1>{tabs.find((tab) => tab.key === activeTab)?.label}</h1>
           </div>
+          <div className="status-pill">
+            <span className={botStatus?.connection === 'open' ? 'dot ok' : 'dot warn'} />
+            {formatConnection(botStatus?.connection)}
+          </div>
+        </header>
 
-          <div className="rail-glow" />
-        </aside>
+        {notice ? <p className="alert success">{notice}</p> : null}
+        {error ? <p className="alert error">{error}</p> : null}
 
-        <section className="workspace">
-          <header className="topbar reveal reveal-delay-1">
-            <div>
-              <p className="topbar-label">Dashboard</p>
-              <h1>Kontrol Mybeebot</h1>
-              <p className="search-meta">
-                {totalMatches} hasil live
-                {lastSyncedAt ? ` • sinkron ${formatClock(lastSyncedAt)}` : ''}
-                {copyNotice ? ` • ${copyNotice}` : ''}
-              </p>
+        {activeTab === 'overview' && (
+          <section className="section-grid">
+            <div className="metric">
+              <span>Bot</span>
+              <strong>{settingsDraft.botEnabled ? 'Aktif' : 'Nonaktif'}</strong>
+              <small>{botStatus?.registered ? 'WhatsApp tertaut' : 'Belum tertaut'}</small>
+            </div>
+            <div className="metric">
+              <span>Command</span>
+              <strong>{botStatus?.commandCount || snapshot?.tools.length || 0}</strong>
+              <small>{toolSummary.enabled}/{toolSummary.total} peralatan aktif</small>
+            </div>
+            <div className="metric">
+              <span>Waktu jalan</span>
+              <strong>{secondsToRuntime(botStatus?.uptimeSeconds)}</strong>
+              <small>{botStatus?.lastDisconnectReason || 'tanpa putus koneksi'}</small>
+            </div>
+            <div className="metric">
+              <span>Improve</span>
+              <strong>{settingsDraft.improvement.enabled ? 'Aktif' : 'Nonaktif'}</strong>
+              <small>{snapshot?.improvementSuggestions?.length || 0} saran siap pakai</small>
+            </div>
+            <div className="metric">
+              <span>Delay balas</span>
+              <strong>
+                {settingsDraft.replyTiming.enabled
+                  ? `${settingsDraft.replyTiming.delaySeconds} dtk`
+                  : 'otomatis'}
+              </strong>
+              <small>
+                Improve {settingsDraft.improvement.enabled ? 'aktif' : 'mati'}
+              </small>
             </div>
 
-            <div className="search-shell">
-              <span className="search-icon" />
+            <section className="panel wide">
+              <h2>Workflow aktif</h2>
+              <div className="workflow-row">
+                {snapshot?.workflows[0]?.steps.map((step) => <span key={step}>{formatWorkflowStep(step)}</span>)}
+              </div>
+            </section>
+
+            <section className="panel wide">
+              <h2>Tes balasan</h2>
+              <form className="inline-form" onSubmit={handleTestReply}>
+                <input value={testMessage} onChange={(event) => setTestMessage(event.target.value)} />
+                <button type="submit">Tes</button>
+              </form>
+              {testReplyResult ? (
+                <pre className="reply-box">{JSON.stringify(testReplyResult, null, 2)}</pre>
+              ) : null}
+            </section>
+          </section>
+        )}
+
+        {activeTab === 'whatsapp' && (
+          <section className="section-grid">
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Kode pairing</p>
+                  <h2>Masukkan nomor WhatsApp</h2>
+                </div>
+                <span className="status-pill">
+                  {botStatus?.registered ? 'Sudah tertaut' : 'Belum tertaut'}
+                </span>
+              </div>
+              <form className="stack" onSubmit={handleGeneratePairing}>
+                <label>
+                  Nomor WhatsApp
+                  <input
+                    value={pairPhone}
+                    onChange={(event) => setPairPhone(event.target.value)}
+                    placeholder="0878xxxx atau 62878xxxx"
+                  />
+                </label>
+                <button type="submit" disabled={isGeneratingPairing || Boolean(botStatus?.registered)}>
+                  {isGeneratingPairing ? 'Membuat kode...' : 'Buat kode pairing'}
+                </button>
+              </form>
+              {pairingResult?.code ? (
+                <div className="pairing-code-box">
+                  <span>Kode pairing</span>
+                  <strong>{pairingResult.code}</strong>
+                  <p>Buka WhatsApp di HP, masuk Perangkat tertaut, lalu pilih Tautkan dengan nomor telepon.</p>
+                </div>
+              ) : null}
+              {pairingResult?.message ? <p className="helper-text">{pairingResult.message}</p> : null}
+              {pairingError ? <p className="alert error">{pairingError}</p> : null}
+            </section>
+
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">QR cadangan</p>
+                  <h2>Scan QR WhatsApp</h2>
+                </div>
+                <button type="button" onClick={() => void handleLoadQr()} disabled={isLoadingQr || Boolean(botStatus?.registered)}>
+                  {isLoadingQr ? 'Memuat QR...' : 'Muat QR'}
+                </button>
+              </div>
+              <div className="qr-box">
+                {qrImage ? <img src={qrImage} alt="QR WhatsApp pairing" /> : <span>QR akan muncul di sini.</span>}
+              </div>
+              {qrMeta?.message ? <p className="helper-text">{qrMeta.message}</p> : null}
+            </section>
+
+            <section className="panel wide">
+              <h2>Langkah pairing</h2>
+              <div className="workflow-row">
+                <span>1. Isi nomor WhatsApp</span>
+                <span>2. Klik buat kode pairing</span>
+                <span>3. Buka WhatsApp HP</span>
+                <span>4. Perangkat tertaut</span>
+                <span>5. Tautkan dengan nomor telepon</span>
+                <span>6. Masukkan kode</span>
+              </div>
+            </section>
+
+            <section className="panel wide">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Pemulihan</p>
+                  <h2>Reset / keluarkan perangkat</h2>
+                </div>
+                <span className="status-pill">{formatConnection(botStatus?.connection)}</span>
+              </div>
+              <div className="action-grid">
+                <button type="button" onClick={() => void handleResetSession()} disabled={isResettingSession}>
+                  {isResettingSession ? 'Mereset...' : 'Reset sesi'}
+                </button>
+                <button type="button" onClick={() => void handleLogoutDevice()} disabled={isLoggingOutDevice}>
+                  {isLoggingOutDevice ? 'Mengeluarkan...' : 'Keluarkan perangkat'}
+                </button>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeTab === 'settings' && (
+          <section className="panel stack">
+            <div className="switch-grid">
+              <label className="switch-line">
+                <input
+                  type="checkbox"
+                  checked={settingsDraft.botEnabled}
+                  onChange={(event) => updateSettings((draft) => { draft.botEnabled = event.target.checked })}
+                />
+                Bot aktif
+              </label>
+              <label className="switch-line">
+                <input
+                  type="checkbox"
+                  checked={settingsDraft.antiCall}
+                  onChange={(event) => updateSettings((draft) => { draft.antiCall = event.target.checked })}
+                />
+                Anti telepon
+              </label>
+              <label className="switch-line">
+                <input
+                  type="checkbox"
+                  checked={settingsDraft.autoReply.enabled}
+                  onChange={(event) => updateSettings((draft) => { draft.autoReply.enabled = event.target.checked })}
+                />
+                Balasan otomatis
+              </label>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                Mode balasan saat FAQ tidak cocok
+                <select value={settingsDraft.ai.fallbackMode} onChange={(event) => updateSettings((draft) => { draft.ai.fallbackMode = event.target.value })}>
+                  <option value="handoff">oper ke admin</option>
+                  <option value="template">pakai template</option>
+                  <option value="silent">diam</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                Prefix perintah
+                <input
+                  value={settingsDraft.commandPrefixes.join(', ')}
+                  onChange={(event) => updateSettings((draft) => { draft.commandPrefixes = event.target.value.split(',').map((item) => item.trim()).filter(Boolean) })}
+                />
+              </label>
+              <label>
+                Mode balasan otomatis
+                <select value={settingsDraft.autoReply.mode} onChange={(event) => updateSettings((draft) => { draft.autoReply.mode = event.target.value })}>
+                  <option value="faq-first">FAQ dulu</option>
+                  <option value="ai-first">template lalu handoff</option>
+                  <option value="off">mati</option>
+                </select>
+              </label>
+              <label>
+                Delay balasan (detik)
+                <input
+                  type="number"
+                  min={0}
+                  max={30}
+                  value={settingsDraft.replyTiming.delaySeconds}
+                  onChange={(event) => updateSettings((draft) => { draft.replyTiming.delaySeconds = Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Mulai aktif
+                <input value={settingsDraft.activeHours.start} onChange={(event) => updateSettings((draft) => { draft.activeHours.start = event.target.value })} />
+              </label>
+              <label>
+                Selesai aktif
+                <input value={settingsDraft.activeHours.end} onChange={(event) => updateSettings((draft) => { draft.activeHours.end = event.target.value })} />
+              </label>
+            </div>
+
+            <label className="switch-line">
               <input
-                className="search-input"
-                type="text"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Cari perintah, endpoint, atau status runtime"
+                type="checkbox"
+                checked={settingsDraft.replyTiming.enabled}
+                onChange={(event) => updateSettings((draft) => { draft.replyTiming.enabled = event.target.checked })}
               />
-              <button
-                type="button"
-                className="sync-button"
-                onClick={() => void refreshAll({ announce: true })}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? 'Sinkron...' : 'Refresh'}
-              </button>
+              Pakai delay balasan tetap
+            </label>
+
+            <label className="switch-line">
+              <input
+                type="checkbox"
+                checked={settingsDraft.activeHours.enabled}
+                onChange={(event) => updateSettings((draft) => { draft.activeHours.enabled = event.target.checked })}
+              />
+              Batasi jam aktif bot
+            </label>
+
+            <div className="form-grid">
+              <label className="switch-line">
+                <input
+                  type="checkbox"
+                  checked={settingsDraft.improvement.enabled}
+                  onChange={(event) => updateSettings((draft) => { draft.improvement.enabled = event.target.checked })}
+                />
+                Mode improve aktif
+              </label>
+              <label>
+                Minimal pengulangan
+                <input
+                  type="number"
+                  min={2}
+                  max={10}
+                  value={settingsDraft.improvement.minRepeats}
+                  onChange={(event) => updateSettings((draft) => { draft.improvement.minRepeats = Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Batas saran improve
+                <input
+                  type="number"
+                  min={3}
+                  max={20}
+                  value={settingsDraft.improvement.suggestionLimit}
+                  onChange={(event) => updateSettings((draft) => { draft.improvement.suggestionLimit = Number(event.target.value) })}
+                />
+              </label>
             </div>
-          </header>
 
-          <div className="workspace-grid">
-            <main className="main-column">
-              <article id="section-overview" className="panel hero-panel reveal reveal-delay-2">
-                <div className="hero-copy">
-                  <p className="eyebrow">Selamat {greeting},</p>
-                  <h2>Kontrol Penuh Mybeebot</h2>
-                  <p className="hero-text">
-                    Dashboard live untuk pairing, fallback QR, pencarian perintah, inspeksi
-                    endpoint, dan monitoring runtime dari domain Cloudflare yang sama.
-                  </p>
+            <label>
+              Pesan welcome
+              <textarea rows={3} value={settingsDraft.welcomeMessage} onChange={(event) => updateSettings((draft) => { draft.welcomeMessage = event.target.value })} />
+            </label>
+            <label>
+              Pesan cadangan
+              <textarea rows={3} value={settingsDraft.fallbackMessage} onChange={(event) => updateSettings((draft) => { draft.fallbackMessage = event.target.value })} />
+            </label>
+            <label>
+              Pesan oper ke admin
+              <textarea rows={3} value={settingsDraft.handoffMessage} onChange={(event) => updateSettings((draft) => { draft.handoffMessage = event.target.value })} />
+            </label>
+
+            <form className="inline-form" onSubmit={saveKeyword}>
+              <input value={keywordCommand} onChange={(event) => setKeywordCommand(event.target.value)} placeholder="perintah" />
+              <input value={keywordValue} onChange={(event) => setKeywordValue(event.target.value)} placeholder="kata kunci baru" />
+              <button type="submit">Simpan keyword</button>
+            </form>
+
+            <button className="primary" type="button" disabled={isBusy} onClick={() => void saveSettings()}>
+              Simpan pengaturan
+            </button>
+          </section>
+        )}
+
+        {activeTab === 'tools' && (
+          <section className="section-grid">
+            <section className="panel wide">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Peralatan yang tersedia</p>
+                  <h2>Suite peralatan admin</h2>
                 </div>
-
-                <div className="hero-stat-bar">
-                  <div>
-                    <span className="muted-label">Skor kesiapan</span>
-                    <strong>{overallReadiness}%</strong>
-                  </div>
-                  <div className="hero-chip-row">
-                    <span className="hero-chip">{status?.status ?? 'sinkron edge'}</span>
-                    <span className="hero-chip">
-                      {botStatus?.registered ? 'perangkat tertaut' : 'menunggu pairing'}
-                    </span>
-                    <span className="hero-chip">
-                      {botStatus?.qrAvailable ? 'qr siap' : 'menunggu qr'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="gradient-meter">
-                  <span style={{ width: `${overallReadiness}%` }} />
-                </div>
-
-                <div className="hero-metrics">
-                  <div className="metric-card large">
-                    <span>Module aktif</span>
-                    <strong>{botStatus?.commandCount ?? activeCommands.length}</strong>
-                    <small>daftar perintah runtime</small>
-                  </div>
-
-                  <div className="metric-card">
-                    <span>Runtime</span>
-                    <strong>{botStatus?.connection ?? 'booting'}</strong>
-                    <small>uptime {formatUptime(botStatus?.uptimeSeconds)}</small>
-                  </div>
-
-                  <div className="metric-card">
-                    <span>Domain</span>
-                    <strong>Aktif</strong>
-                    <small>{status?.domain ?? 'menempelkan rute'}</small>
-                  </div>
-                </div>
-              </article>
-
-              <article className="panel guide-panel reveal reveal-delay-2">
-                <div className="guide-copy">
-                  <p className="tiny-label">Mulai Dari Sini</p>
-                  <h3>{nextAction.title}</h3>
-                  <p>{nextAction.body}</p>
-                </div>
-
-                <div className="guide-actions">
-                  <button
-                    type="button"
-                    className="guide-button primary"
-                    onClick={nextAction.primaryAction}
-                  >
-                    {nextAction.primaryLabel}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="guide-button"
-                    onClick={nextAction.secondaryAction}
-                  >
-                    {nextAction.secondaryLabel}
-                  </button>
-
-                  <a
-                    className="guide-button link"
-                    href="https://web.whatsapp.com/"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Buka WhatsApp Web
-                  </a>
-                </div>
-
-                <div className="guide-grid">
-                  <article className="guide-card">
-                    <span>1. Buka Akses</span>
-                    <strong>Isi admin key</strong>
-                    <p>Isi admin key sekali. Dashboard akan menyimpannya di browser Anda.</p>
+                <span className="status-pill">{toolSummary.enabled}/{toolSummary.total} perintah aktif</span>
+              </div>
+              <div className="tool-suite-grid">
+                {adminToolSuites.map((tool) => (
+                  <article className="tool-suite" key={tool.name}>
+                    <span>{tool.channel}</span>
+                    <strong>{tool.name}</strong>
+                    <p>{tool.detail}</p>
                   </article>
+                ))}
+              </div>
+            </section>
 
-                  <article className="guide-card">
-                    <span>2. Sambungkan</span>
-                    <strong>Kode atau QR</strong>
-                    <p>Pakai kode untuk link via nomor, atau QR kalau scan dari desktop lebih gampang.</p>
-                  </article>
-
-                  <article className="guide-card">
-                    <span>3. Pakai Bot</span>
-                    <strong>Kirim perintah awal</strong>
-                    <p>Setelah tertaut, salin `.menu`, buka WhatsApp, lalu kirim ke chat sendiri atau chat yang diizinkan.</p>
-                  </article>
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Kontrol grup peralatan</p>
+                  <h2>Kategori peralatan</h2>
                 </div>
-              </article>
-
-              <div className="split-grid">
-                <article className="panel queue-panel reveal reveal-delay-3">
-                  <div className="panel-head">
+              </div>
+              <div className="tool-category-list">
+                {toolCategories.map(([category, row]) => (
+                  <article key={category}>
                     <div>
-                      <p className="tiny-label">Antrian runtime</p>
-                      <h3>Alur deploy</h3>
+                      <strong>{category}</strong>
+                      <span>{row.enabled}/{row.total} aktif</span>
                     </div>
-                    <span className="soft-pill">{overallReadiness}% sinkron</span>
-                  </div>
+                    <div className="button-row">
+                      <button type="button" disabled={isBusy || row.enabled === row.total} onClick={() => void toggleToolCategory(category, true)}>
+                        Aktifkan grup
+                      </button>
+                      <button type="button" className="danger" disabled={isBusy || row.enabled === 0} onClick={() => void toggleToolCategory(category, false)}>
+                        Nonaktifkan grup
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
 
-                  <div className="workflow-list">
-                    {workflowRows.map((row) => (
-                      <div key={row.label} className="workflow-row">
-                        <div className="workflow-copy">
-                          <strong>{row.label}</strong>
-                          <span>{row.detail}</span>
-                        </div>
+            <section className="panel">
+              <h2>Metadata wajib</h2>
+              <div className="schema-list">
+                {[
+                  'id',
+                  'nama',
+                  'deskripsi',
+                  'status aktif',
+                  'kategori',
+                  'skema input',
+                  'skema output',
+                  'terakhir dipakai',
+                  'jumlah galat',
+                ].map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </section>
 
-                        <div className="workflow-meter">
-                          <div className="workflow-track">
-                            <span style={{ width: `${row.percent}%` }} />
-                          </div>
-                          <small>{row.state}</small>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-
-                <article
-                  id="section-pairing"
-                  className="panel pairing-panel reveal reveal-delay-4"
-                >
-                  <div className="panel-head">
+            <section className="panel wide">
+              <h2>Daftar perintah peralatan</h2>
+              <div className="table">
+                {snapshot?.tools.map((tool) => (
+                  <div className="table-row" key={tool.id}>
                     <div>
-                      <p className="tiny-label">Hubungkan perangkat</p>
-                      <h3>Panel koneksi website</h3>
+                      <strong>{tool.name}</strong>
+                      <small>{tool.description}</small>
                     </div>
-                    <button
-                      type="button"
-                      className="ghost-action"
-                      onClick={() => void copyText(normalizePhone(pairPhone), 'Nomor ternormalisasi')}
-                    >
-                      Salin nomor
+                    <span>{tool.category}</span>
+                    <span>{tool.error_count} galat</span>
+                    <span>{tool.last_used ? formatDate(tool.last_used) : 'belum dipakai'}</span>
+                    <button type="button" disabled={tool.protected || isBusy} onClick={() => void toggleTool(tool)}>
+                      {tool.enabled ? 'Aktif' : 'Nonaktif'}
                     </button>
                   </div>
-
-                  <div className="pairing-form">
-                    <label className="field-block">
-                      <span>Nomor WhatsApp</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={pairPhone}
-                        onChange={(event) => setPairPhone(event.target.value)}
-                        placeholder="0878..."
-                      />
-                    </label>
-
-                    <label className="field-block">
-                      <span>Admin key</span>
-                      <input
-                        type="password"
-                        value={adminKey}
-                        onChange={(event) => setAdminKey(event.target.value)}
-                        placeholder="Masukkan admin key dashboard"
-                      />
-                    </label>
-
-                    <div className="pairing-actions">
-                      <button
-                        type="button"
-                        className="generate-button"
-                        onClick={handleGeneratePairingCode}
-                        disabled={isGenerating || isResetting || isLoadingQr}
-                      >
-                        {isGenerating ? 'Membuat...' : 'Ambil Kode Pairing'}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="reset-button"
-                        onClick={handleResetSession}
-                        disabled={isGenerating || isResetting || isLoadingQr}
-                      >
-                        {isResetting ? 'Mereset...' : 'Reset Sesi'}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="qr-button"
-                        onClick={handleLoadQr}
-                        disabled={isGenerating || isResetting || isLoadingQr}
-                      >
-                        {isLoadingQr ? 'Memuat QR...' : 'Tampilkan QR untuk Scan'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="pairing-command">
-                    <span>Format nomor</span>
-                    <code>{normalizedPhone || '62xxxxxxxxxxx'}</code>
-                  </div>
-
-                  <div className="pairing-grid">
-                    <div className="mini-stat">
-                      <span>Mode</span>
-                      <strong>{botStatus?.mode ?? 'public'}</strong>
-                    </div>
-                    <div className="mini-stat">
-                      <span>Prefix</span>
-                      <strong>{botStatus?.prefix ?? '.'}</strong>
-                    </div>
-                    <div className="mini-stat">
-                      <span>Proxy</span>
-                      <strong>{liveMeta?.deployment ?? 'cloudflare'}</strong>
-                    </div>
-                    <div className="mini-stat">
-                      <span>Device</span>
-                      <strong>{botStatus?.registered ? 'Tertaut' : 'Menunggu'}</strong>
-                    </div>
-                  </div>
-
-                  <div className="pairing-result">
-                    <div className="result-head">
-                      <span>Kode terbaru</span>
-                      {pairingResult?.code ? (
-                        <button
-                          type="button"
-                          className="ghost-action"
-                          onClick={() => void copyText(pairingResult.code || '', 'Kode pairing')}
-                        >
-                          Salin kode
-                        </button>
-                      ) : null}
-                    </div>
-                    <strong>{pairingResult?.code ?? '--------'}</strong>
-                    <small>
-                      {pairingResult?.requestedAt
-                        ? `Dibuat ${formatDateTime(pairingResult.requestedAt)}`
-                        : 'Buat kode baru, lalu masukkan ke menu Linked Devices WhatsApp.'}
-                    </small>
-                  </div>
-
-                  <div className="qr-result">
-                    <div className="result-head">
-                      <span>QR cadangan desktop</span>
-                      {qrImage ? (
-                        <button
-                          type="button"
-                          className="ghost-action"
-                          onClick={handleLoadQr}
-                          disabled={isLoadingQr}
-                        >
-                          Muat ulang QR
-                        </button>
-                      ) : null}
-                    </div>
-                    {qrImage ? (
-                      <>
-                        <div className="qr-frame">
-                          <img src={qrImage} alt="Mybeebot WhatsApp QR" />
-                        </div>
-                        <small>
-                          {qrMeta?.generatedAt
-                            ? `QR diperbarui ${formatDateTime(qrMeta.generatedAt)}`
-                            : 'Buka dashboard ini di laptop, lalu scan dari menu Linked Devices di HP Anda.'}
-                        </small>
-                      </>
-                    ) : (
-                      <small>
-                        {qrError ||
-                          'Kalau pairing via nomor terus gagal, buka dashboard ini di desktop lalu muat QR.'}
-                      </small>
-                    )}
-                  </div>
-
-                  <div className="checklist">
-                    {pairingChecklist.map((item) => (
-                      <div key={item.label} className={`check-item${item.done ? ' done' : ''}`}>
-                        <span className="check-dot" />
-                        <span>{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="pairing-note">{pairingMessage}</div>
-                </article>
+                ))}
               </div>
+            </section>
+          </section>
+        )}
 
-              <article id="section-use" className="panel use-panel reveal reveal-delay-4">
-                <div className="panel-head">
-                  <div>
-                    <p className="tiny-label">Pakai Bot</p>
-                    <h3>Apa yang dilakukan setelah tertaut</h3>
-                  </div>
-                  <button
-                    type="button"
-                    className="ghost-action"
-                    onClick={() => void refreshAll({ announce: true })}
-                  >
-                    Cek status live
-                  </button>
-                </div>
-
-                <div className="use-grid">
-                  <div className="use-card highlight">
-                    <span>Status sekarang</span>
-                    <strong>{isBotReady ? 'Siap dipakai' : isLinked ? 'Sudah tertaut, menunggu socket' : 'Belum tertaut'}</strong>
-                    <p>
-                      {isBotReady
-                        ? 'Buka WhatsApp sekarang lalu kirim salah satu perintah awal di bawah.'
-                        : isLinked
-                          ? 'Perangkat sudah tertaut, tapi socket belum terbuka penuh. Tunggu sebentar lalu refresh.'
-                          : 'Hubungkan perangkat dulu dari panel pairing, lalu balik ke sini untuk memakai bot.'}
-                    </p>
-                  </div>
-
-                  <div className="use-card">
-                    <span>Buka chat</span>
-                    <strong>Pakai WhatsApp Anda sendiri</strong>
-                    <p>Setelah tertaut, kirim perintah dari chat sendiri, chat ke diri sendiri, atau chat lain yang diizinkan mode bot.</p>
-                    <a
-                      className="use-link"
-                    href="https://web.whatsapp.com/"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                      Buka WhatsApp Web
-                    </a>
-                  </div>
-                </div>
-
-                <div className="starter-grid">
-                  {starterCommands.map((command) => (
-                    <article key={command} className="starter-card">
-                      <strong>{command}</strong>
-                      <p>{commandDescriptions[command] ?? 'Perintah awal.'}</p>
-                      <button
-                        type="button"
-                        className="command-action"
-                        onClick={() =>
-                          void copyText(commandExamples[command] ?? command, `${command} starter`)
-                        }
-                      >
-                        Salin perintah
-                      </button>
+        {activeTab === 'knowledge' && (
+          <section className="section-grid">
+            <section className="panel">
+              <h2>Saran improve bot</h2>
+              <div className="list">
+                {(snapshot?.improvementSuggestions || []).length ? (
+                  snapshot?.improvementSuggestions.map((item) => (
+                    <article key={item.id}>
+                      <strong>{item.question}</strong>
+                      <p>
+                        Dipakai {item.count}x, terakhir {formatDate(item.lastSeenAt)}
+                      </p>
+                      <div className="button-row">
+                        <button type="button" onClick={() => applyImprovementSuggestion(item)}>
+                          Jadikan FAQ
+                        </button>
+                      </div>
                     </article>
-                  ))}
-                </div>
-
-                <div className="usage-steps">
-                  <div className="usage-step">
-                    <span>Langkah 1</span>
-                    <p>Link perangkat dari panel pairing.</p>
-                  </div>
-                  <div className="usage-step">
-                    <span>Langkah 2</span>
-                    <p>Tunggu sampai status registered aktif dan idealnya runtime sudah `open`.</p>
-                  </div>
-                  <div className="usage-step">
-                    <span>Langkah 3</span>
-                    <p>Salin `.menu` atau `.ping`, buka WhatsApp, lalu kirim.</p>
-                  </div>
-                </div>
-              </article>
-
-              <article
-                id="section-commands"
-                className="panel command-panel reveal reveal-delay-4"
-              >
-                <div className="panel-head">
-                  <div>
-                    <p className="tiny-label">Matriks perintah</p>
-                    <h3>Daftar perintah aktif</h3>
-                  </div>
-                  <a
-                    className="ghost-link"
-                    href={liveMeta?.repoUrl ?? 'https://github.com/myarzlvisualdesign-blip/Mybeebot'}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    buka repo
-                  </a>
-                </div>
-
-                <div className="command-grid">
-                  {filteredCommands.length ? (
-                    filteredCommands.map((command) => (
-                      <article key={command} className="command-tile">
-                        <div className="command-head">
-                          <strong>{command}</strong>
-                          <button
-                            type="button"
-                            className="command-action"
-                            onClick={() =>
-                              void copyText(
-                                getCommandExample(command),
-                                `Contoh ${command}`,
-                              )
-                            }
-                          >
-                            salin
-                          </button>
-                        </div>
-                        <p>{getCommandDescription(command)}</p>
-                        <code className="command-example">{getCommandExample(command)}</code>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="empty-state">
-                      Tidak ada perintah yang cocok dengan <strong>{searchQuery}</strong>.
-                    </div>
-                  )}
-                </div>
-              </article>
-
-              <article id="section-api" className="panel api-panel reveal reveal-delay-4">
-                <div className="panel-head">
-                  <div>
-                    <p className="tiny-label">Penjelajah API</p>
-                    <h3>Cek endpoint live</h3>
-                  </div>
-                  <button
-                    type="button"
-                    className="ghost-action"
-                    onClick={() => void inspectEndpoint('bot-qr', 'POST /api/bot-qr', '/api/bot-qr', {
-                      method: 'POST',
-                      headers: {
-                        'content-type': 'application/json',
-                      },
-                      body: JSON.stringify({ adminKey }),
-                    })}
-                    disabled={!adminKey || inspectingKey === 'bot-qr'}
-                  >
-                    {inspectingKey === 'bot-qr' ? 'Memeriksa...' : 'Cek QR'}
-                  </button>
-                </div>
-
-                <div className="api-grid">
-                  {filteredEndpoints.length ? (
-                    filteredEndpoints.map((endpoint) => (
-                      <article key={endpoint.key} className="api-card">
-                        <div className="api-head">
-                          <strong>{endpoint.label}</strong>
-                          <span className="api-method">{endpoint.method}</span>
-                        </div>
-                        <p>{endpoint.description}</p>
-                        <code>{endpoint.path}</code>
-                        <div className="api-actions">
-                          <button
-                            type="button"
-                            className="command-action"
-                            onClick={() =>
-                              void inspectEndpoint(
-                                endpoint.key,
-                                `${endpoint.method} ${endpoint.path}`,
-                                endpoint.path,
-                              )
-                            }
-                            disabled={inspectingKey === endpoint.key}
-                          >
-                            {inspectingKey === endpoint.key ? 'Mengetes...' : 'Tes'}
-                          </button>
-                          <button
-                            type="button"
-                            className="command-action secondary"
-                            onClick={() => void copyText(endpoint.path, `${endpoint.path} path`)}
-                          >
-                            salin path
-                          </button>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="empty-state">
-                      Tidak ada endpoint yang cocok dengan <strong>{searchQuery}</strong>.
-                    </div>
-                  )}
-                </div>
-
-                <div className={`json-panel${inspector?.tone === 'error' ? ' error' : ''}`}>
-                  <div className="result-head">
-                    <span>{inspector?.label ?? 'Respons endpoint terbaru'}</span>
-                    {inspector ? (
-                      <button
-                        type="button"
-                        className="ghost-action"
-                        onClick={() => void copyText(inspector.payload, 'Payload inspector')}
-                      >
-                        Salin JSON
-                      </button>
-                    ) : null}
-                  </div>
-                  <pre>{inspector?.payload ?? 'Jalankan tes di salah satu endpoint untuk melihat respons JSON live di sini.'}</pre>
-                </div>
-              </article>
-            </main>
-
-            <aside className="side-column">
-              <article className="panel side-card accent reveal reveal-delay-2">
-                <p className="tiny-label">Skor workspace</p>
-                <strong className="score-number">{overallReadiness}</strong>
-                <span className="score-unit">persen siap</span>
-                <div className="score-track">
-                  <span style={{ width: `${overallReadiness}%` }} />
-                </div>
-              </article>
-
-              <article className="panel side-card reveal reveal-delay-3">
-                <p className="tiny-label">Permukaan edge</p>
-                <h3>Route live</h3>
-                <ul className="detail-list">
-                  <li>{status?.domain ?? 'menunggu domain'}</li>
-                  <li>{status?.runtime ?? 'Aset statis worker'}</li>
-                  <li>{lastSyncedAt ? `Sinkron ${formatDateTime(lastSyncedAt)}` : 'Menunggu ping edge'}</li>
-                </ul>
-              </article>
-
-              <article className="panel side-card reveal reveal-delay-4">
-                <p className="tiny-label">Feed runtime</p>
-                <h3>Catatan sistem</h3>
-                <ul className="feed-list">
-                  {runtimeFeed.length ? (
-                    runtimeFeed.map((entry) => <li key={entry}>{entry}</li>)
-                  ) : (
-                    <li>Tidak ada catatan runtime yang cocok dengan pencarian saat ini.</li>
-                  )}
-                </ul>
-              </article>
-
-              <article className="panel side-card reveal reveal-delay-4">
-                <p className="tiny-label">Link langsung</p>
-                <h3>Jalur kontrol</h3>
-                {controlLinks.length ? (
-                  controlLinks.map((link) => (
-                    <div key={link.href} className="endpoint-row">
-                      <a className="endpoint-link" href={link.href} target="_blank" rel="noreferrer">
-                        <span>{link.label}</span>
-                        <small>{link.href}</small>
-                      </a>
-                      <button
-                        type="button"
-                        className="endpoint-copy"
-                        onClick={() => void copyText(link.href, `${link.label} link`)}
-                      >
-                        salin
-                      </button>
-                    </div>
                   ))
                 ) : (
-                  <div className="empty-state compact">Tidak ada link yang cocok dengan pencarian saat ini.</div>
+                  <article>
+                    <strong>Belum ada saran improve.</strong>
+                    <p>Bot akan menampilkan saran dari pesan user yang sering berulang tetapi belum masuk FAQ.</p>
+                  </article>
                 )}
-              </article>
+              </div>
+            </section>
 
-              <article
-                id="section-activity"
-                className="panel side-card reveal reveal-delay-4 activity-panel"
-              >
-                <p className="tiny-label">Log aktivitas</p>
-                <h3>Aksi terbaru</h3>
-                <div className="activity-list">
-                  {activity.length ? (
-                    activity.map((entry) => (
-                      <div key={entry.id} className={`activity-item ${entry.tone}`}>
-                        <span className="activity-time">{formatClock(entry.time)}</span>
-                        <p>{entry.text}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty-state compact">
-                      Belum ada aksi dashboard. Coba Refresh, tes endpoint, buat kode, muat QR, atau salin perintah.
+            <section className="panel">
+              <h2>FAQ</h2>
+              <form className="stack" onSubmit={saveFaq}>
+                <input value={faqQuestion} onChange={(event) => setFaqQuestion(event.target.value)} placeholder="Pertanyaan" />
+                <textarea rows={4} value={faqAnswer} onChange={(event) => setFaqAnswer(event.target.value)} placeholder="Jawaban" />
+                <div className="button-row">
+                  <button type="submit">{editingFaqId ? 'Simpan perubahan' : 'Tambah FAQ'}</button>
+                  {editingFaqId ? (
+                    <button type="button" className="secondary" onClick={cancelFaqEdit}>
+                      Batal
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+              <div className="list">
+                {snapshot?.faq.map((item) => (
+                  <article key={item.id}>
+                    <strong>{item.question}</strong>
+                    <p>{item.answer}</p>
+                    <div className="button-row">
+                      <button type="button" onClick={() => editFaq(item)}>Edit</button>
+                      <button type="button" className="danger" onClick={() => void deleteFaq(item.id)}>Hapus</button>
                     </div>
-                  )}
-                </div>
-              </article>
+                  </article>
+                ))}
+              </div>
+            </section>
 
-              <article className="panel status-strip reveal reveal-delay-4">
-                <span
-                  className={`status-led${statusError || botStatusError || metaError ? ' offline' : ''}`}
-                />
-                <div>
-                  <strong>
-                    {statusError || botStatusError || metaError
-                      ? 'Permukaan live perlu perhatian'
-                      : 'Proxy live online'}
-                  </strong>
-                  <p>
-                    {statusError || botStatusError || metaError
-                      ? statusError || botStatusError || metaError
-                      : liveMeta?.note ||
-                        'Cloudflare edge dan proxy runtime merespons dari domain yang sama.'}
-                  </p>
+            <section className="panel">
+              <h2>Template</h2>
+              <form className="stack" onSubmit={saveTemplate}>
+                <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Nama template" readOnly={Boolean(editingTemplateName)} />
+                <textarea rows={4} value={templateBody} onChange={(event) => setTemplateBody(event.target.value)} placeholder="Isi template" />
+                <div className="button-row">
+                  <button type="submit">{editingTemplateName ? 'Simpan perubahan' : 'Simpan template'}</button>
+                  {editingTemplateName ? (
+                    <button type="button" className="secondary" onClick={cancelTemplateEdit}>
+                      Batal
+                    </button>
+                  ) : null}
                 </div>
-              </article>
-            </aside>
-          </div>
-        </section>
-      </div>
-    </div>
+              </form>
+              <div className="list">
+                {Object.values(snapshot?.templates || {}).map((template) => (
+                  <article key={template.name}>
+                    <strong>{template.name}</strong>
+                    <p>{template.body}</p>
+                    <div className="button-row">
+                      <button type="button" onClick={() => editTemplate(template)}>Edit</button>
+                      <button type="button" className="danger" onClick={() => void deleteTemplate(template.name)}>Hapus</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeTab === 'roles' && (
+          <section className="panel stack">
+            <h2>Owner & admin</h2>
+            <form className="inline-form" onSubmit={addRole}>
+              <select value={roleKind} onChange={(event) => setRoleKind(event.target.value as 'admins' | 'owners')}>
+                <option value="admins">Admin</option>
+                <option value="owners">Owner</option>
+              </select>
+              <input value={roleNumber} onChange={(event) => setRoleNumber(event.target.value)} placeholder="6281234567890 atau 123@lid" />
+              <button type="submit">Tambah role</button>
+            </form>
+            <div className="role-grid">
+              <div>
+                <h3>Owner</h3>
+                {(snapshot?.roles.owners || []).map((number) => (
+                  <p key={number}>
+                    {number}
+                    <button type="button" onClick={() => void deleteRole('owners', number)}>hapus</button>
+                  </p>
+                ))}
+              </div>
+              <div>
+                <h3>Admin</h3>
+                {(snapshot?.roles.admins || []).map((number) => (
+                  <p key={number}>
+                    {number}
+                    <button type="button" onClick={() => void deleteRole('admins', number)}>hapus</button>
+                  </p>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'logs' && (
+          <section className="section-grid">
+            <section className="panel">
+              <h2>Log pesan</h2>
+              <div className="log-list">
+                {snapshot?.messageLogs.map((log) => (
+                  <article key={log.id}>
+                    <span>{formatDate(log.at)} - {log.direction}</span>
+                    <strong>{log.sender}</strong>
+                    <p>{log.body}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="panel">
+              <h2>Jejak audit</h2>
+              <div className="log-list">
+                {snapshot?.auditLogs.map((log) => (
+                  <article key={log.id}>
+                    <span>{formatDate(log.at)}</span>
+                    <strong>{log.action}</strong>
+                    <p>{log.target} oleh {log.actor?.source || 'system'}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeTab === 'integrations' && (
+          <section className="panel stack">
+            <h2>API & webhook</h2>
+            <label>
+              URL dasar API
+              <input value={settingsDraft.integrations.apiBaseUrl} onChange={(event) => updateSettings((draft) => { draft.integrations.apiBaseUrl = event.target.value })} />
+            </label>
+            <label className="switch-line">
+              <input
+                type="checkbox"
+                checked={settingsDraft.integrations.webhook.enabled}
+                onChange={(event) => updateSettings((draft) => { draft.integrations.webhook.enabled = event.target.checked })}
+              />
+              Webhook aktif
+            </label>
+            <label>
+              URL webhook
+              <input value={settingsDraft.integrations.webhook.url} onChange={(event) => updateSettings((draft) => { draft.integrations.webhook.url = event.target.value })} />
+            </label>
+            <label>
+              Kunci rahasia webhook
+              <input type="password" value={webhookSecret} onChange={(event) => setWebhookSecret(event.target.value)} placeholder="isi hanya jika ingin mengganti" />
+            </label>
+            <label>
+              Aturan handoff
+              <textarea rows={5} value={settingsDraft.ai.escalationRules} onChange={(event) => updateSettings((draft) => { draft.ai.escalationRules = event.target.value })} />
+            </label>
+            <button className="primary" type="button" disabled={isBusy} onClick={() => void saveSettings()}>
+              Simpan integrasi
+            </button>
+          </section>
+        )}
+      </section>
+    </main>
   )
 }
 

@@ -39,6 +39,10 @@ function isLocalAiEndpoint(value) {
 }
 
 export function aiIsConfigured(config) {
+  if (config.aiEnabled === false) {
+    return false
+  }
+
   return Boolean(config.aiBaseUrl && config.aiModel && (config.aiApiKey || isLocalAiEndpoint(config.aiBaseUrl)))
 }
 
@@ -78,11 +82,18 @@ export async function generateAiReply({ config, prompt, context }) {
       body: JSON.stringify({
         model: config.aiModel,
         temperature: 0.7,
-        max_tokens: 400,
+        max_tokens: Number(config.aiMaxResponseLength || 400),
         messages: [
           {
             role: 'system',
-            content: config.aiSystemPrompt,
+            content: [
+              config.aiSystemPrompt,
+              config.aiTone ? `Tone: ${config.aiTone}.` : '',
+              config.aiReplyStyle ? `Gaya balasan: ${config.aiReplyStyle}.` : '',
+              config.aiEscalationRules ? `Aturan eskalasi: ${config.aiEscalationRules}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n'),
           },
           ...(context
             ? [

@@ -64,6 +64,31 @@ The public bot health proxy is exposed from the same domain at:
 - `.echo`
 - `.reload`
 
+## Admin refactor
+
+The bot now uses one settings source through `SettingsService`:
+
+- web dashboard calls `/api/admin/*`
+- WhatsApp admin commands call the same service layer
+- settings, tools, FAQ, templates, workflows, message logs, and audit logs are stored in `packages/bot/data/app-database.json`
+- logical migration schema lives in `packages/bot/database/schema.sql`
+
+Admin WhatsApp commands support both `.` and `/`, for example:
+
+```text
+/settings
+/tools
+/tool off ytmp3
+/set delay 2
+/set improve on
+/faq add Jam operasional?|Admin aktif 08:00-21:00.
+/template add welcome|Halo, ada yang bisa dibantu?
+/addadmin 6281234567890
+/statusbot
+```
+
+See `docs/architecture.md` for the audit, folder structure, API list, workflow, and deploy notes.
+
 ## Reference
 
 Upstream inspiration:

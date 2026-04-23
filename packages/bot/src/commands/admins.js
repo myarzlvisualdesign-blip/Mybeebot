@@ -6,7 +6,7 @@ export default {
   category: 'grup',
   description: 'Tandai semua admin di grup ini.',
   async execute({ message, reply, sock }) {
-    const { participants } = await getGroupContext(sock, message)
+    const { jid, participants } = await getGroupContext(sock, message)
     const admins = participants.filter((entry) => entry.admin)
 
     if (!admins.length) {
@@ -16,7 +16,7 @@ export default {
 
     const lines = admins.map((entry, index) => `${index + 1}. ${toMention(entry.id)}`)
     await sock.sendMessage(
-      message.key.remoteJid,
+      jid,
       {
         text: ['*Daftar admin grup*', '', ...lines].join('\n'),
         mentions: admins.map((entry) => entry.id),

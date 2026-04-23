@@ -1,4 +1,11 @@
-import { getChatJid, getSenderJid, isGroupChat, toMention } from '../lib/group-utils.js'
+import {
+  getChatJid,
+  getSenderJid,
+  getSenderJids,
+  isGroupChat,
+  normalizeJid,
+  toMention,
+} from '../lib/group-utils.js'
 import { isOwner } from '../lib/message-utils.js'
 import { renderProfileCard } from '../lib/profile-card.js'
 
@@ -10,15 +17,20 @@ export default {
   async execute({ config, message, sock, userStore }) {
     const chatJid = getChatJid(message)
     const sender = getSenderJid(message)
+    const senderJids = getSenderJids(message)
     const group = isGroupChat(message)
-    const owner = isOwner(sender, config) || Boolean(message?.key?.fromMe)
+    const owner = senderJids.some((jid) => isOwner(jid, config)) || Boolean(message?.key?.fromMe)
     const user = userStore.get(sender)
     let role = owner ? 'Owner 👑' : 'Member 👤'
     let chatName = 'Chat pribadi'
 
     if (group) {
       const metadata = await sock.groupMetadata(chatJid).catch(() => null)
-      const participant = metadata?.participants?.find((entry) => entry.id === sender)
+      const participant = metadata?.participants?.find((entry) =>
+        [entry.id, entry.jid, entry.lid, entry.phoneNumber].some((jid) =>
+          senderJids.includes(normalizeJid(jid)),
+        ),
+      )
       if (participant?.admin && !owner) {
         role = 'Admin Grup 🛡️'
       }
@@ -39,7 +51,7 @@ export default {
     })
 
     await sock.sendMessage(
-      message.key.remoteJid,
+      chatJid,
       {
         image: card,
         caption: [

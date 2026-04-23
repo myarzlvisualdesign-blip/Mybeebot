@@ -1,5 +1,5 @@
 import process from 'node:process'
-import { readdir, rm } from 'node:fs/promises'
+import { readFile, readdir, rm } from 'node:fs/promises'
 import qrcode from 'qrcode-terminal'
 import makeWASocket, {
   Browsers,
@@ -8,28 +8,36 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
-import { generateAiReply, aiIsConfigured } from './lib/ai-client.js'
+import { resolveAssistantReply } from './lib/assistant-reply.js'
+import { AppDatabase } from './lib/app-database.js'
+import { parseCommand } from './lib/command-parser.js'
 import { config } from './config.js'
 import { CommandRegistry } from './lib/command-registry.js'
 import {
   getChatJid,
   getSenderJid,
+  getSenderJids,
+  isGroupJid,
   normalizeJid,
+  resolveSenderJids,
   toMention,
 } from './lib/group-utils.js'
 import { startHealthServer } from './lib/health-server.js'
 import { logger } from './lib/logger.js'
-import { cleanNumber, extractText, isOwner } from './lib/message-utils.js'
-import { GroupSettingsStore } from './lib/settings-store.js'
-import { SystemSettingsStore } from './lib/system-settings-store.js'
+import { cleanNumber, extractText } from './lib/message-utils.js'
+import { canManageSettings, getRole } from './lib/permissions.js'
+import { SettingsService } from './lib/settings-service.js'
+import { ToolRegistry } from './lib/tool-registry.js'
 import { UserStore } from './lib/user-store.js'
 import { renderWelcomeCard } from './lib/welcome-card.js'
+import { buildWorkflowTrace, isInsideActiveHours } from './lib/workflow-engine.js'
 
 const registry = new CommandRegistry()
-const groupSettings = new GroupSettingsStore(new URL('../data/group-settings.json', import.meta.url))
-const systemSettings = new SystemSettingsStore(
-  new URL('../data/system-settings.json', import.meta.url),
-)
+const appDatabase = new AppDatabase(new URL('../data/app-database.json', import.meta.url))
+const settingsService = new SettingsService(appDatabase, config)
+const groupSettings = settingsService.createGroupSettingsAdapter()
+const systemSettings = settingsService.createSystemSettingsAdapter()
+const toolRegistry = new ToolRegistry(settingsService)
 const userStore = new UserStore(new URL('../data/users.json', import.meta.url))
 const state = {
   commandCount: 0,
@@ -47,6 +55,29 @@ const runtime = {
   sock: null,
 }
 const antiSpamState = new Map()
+
+function resolveRegistered(sock) {
+  return Boolean(
+    sock?.authState?.creds?.registered ||
+      sock?.user?.id ||
+      sock?.authState?.creds?.me?.id,
+  )
+}
+
+function buildRuntimeConfig() {
+  const settings = settingsService.getSettings()
+
+  return {
+    ...config,
+    prefix: settings.commandPrefixes?.[0] || config.prefix,
+    aiEnabled: settings.ai.enabled,
+    aiSystemPrompt: settings.ai.systemPrompt || config.aiSystemPrompt,
+    aiTone: settings.ai.tone,
+    aiReplyStyle: settings.ai.replyStyle,
+    aiMaxResponseLength: settings.ai.maxResponseLength,
+    aiEscalationRules: settings.ai.escalationRules,
+  }
+}
 
 function extractContextInfo(payload) {
   if (!payload) {
@@ -136,21 +167,72 @@ function trackSpamActivity(chatJid, sender, isCommand) {
   return existing
 }
 
-async function ensurePairingCode(sock) {
-  if (!config.usePairingCode || sock.authState.creds.registered) {
-    return
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function typingDelayForPayload(payload, settings) {
+  const configuredDelay = Number(settings?.replyTiming?.delaySeconds || 0)
+  if (settings?.replyTiming?.enabled) {
+    return Math.max(0, configuredDelay) * 1000
   }
 
-  const phoneNumber = cleanNumber(config.pairingNumber)
-  if (!phoneNumber) {
-    logger.warn(
-      `PAIRING_NUMBER belum diisi. Minta kode lokal lewat http://127.0.0.1:${config.healthPort}/pairing?phone=628...`,
-    )
-    return
+  const text = String(payload.text || payload.caption || '')
+  if (!text) {
+    return 600
   }
 
-  const pairingCode = await requestPairingCode(phoneNumber)
-  logger.success(`Kode pairing: ${pairingCode}`)
+  return Math.min(2200, Math.max(700, text.length * 18))
+}
+
+async function showTyping(sock, chatJid, payload) {
+  const delay = typingDelayForPayload(payload, settingsService.getSettings())
+  await sock.presenceSubscribe?.(chatJid).catch(() => {})
+  await sock.sendPresenceUpdate?.('composing', chatJid).catch(() => {})
+  await wait(delay)
+}
+
+function createReply(sock, message, chatJid, senderJids) {
+  return async (content) => {
+    const payload = typeof content === 'string' ? { text: content } : { ...content }
+    const mentions = new Set(payload.mentions || [])
+
+    if (isGroupJid(chatJid) && !message.key.fromMe) {
+      for (const jid of senderJids) {
+        mentions.add(jid)
+      }
+    }
+
+    await showTyping(sock, chatJid, payload)
+    let sent
+    try {
+      sent = await sock.sendMessage(
+        chatJid,
+        {
+          ...payload,
+          ...(mentions.size ? { mentions: [...mentions] } : {}),
+        },
+        { quoted: message },
+      )
+    } finally {
+      await sock.sendPresenceUpdate?.('paused', chatJid).catch(() => {})
+    }
+
+    await settingsService
+      .logMessage({
+        direction: 'out',
+        chatJid,
+        sender: 'bot',
+        body: payload.text || payload.caption || '[media]',
+        mode: 'reply',
+        status: 'sent',
+      })
+      .catch((error) => logger.warn(`Log pesan keluar gagal: ${error.message}`))
+
+    return sent
+  }
 }
 
 async function requestPairingCode(phoneNumber) {
@@ -165,8 +247,15 @@ async function requestPairingCode(phoneNumber) {
   }
 
   if (sock.authState.creds.registered) {
-    runtime.registered = true
+    runtime.registered = resolveRegistered(sock)
     return 'sudah-terdaftar'
+  }
+
+  const lastRequestAt = runtime.lastPairingRequestAt
+    ? new Date(runtime.lastPairingRequestAt).getTime()
+    : 0
+  if (runtime.lastPairingCode && Date.now() - lastRequestAt < 60000) {
+    return runtime.lastPairingCode
   }
 
   const pairingCode = await sock.requestPairingCode(sanitized)
@@ -229,6 +318,52 @@ async function resetSession() {
   return scheduleRestart('Reset sesi diminta. Bot sedang restart...', 'manual-reset')
 }
 
+async function logoutDevice() {
+  const sock = runtime.sock
+  let logoutSucceeded = false
+  let logoutMessage = ''
+
+  if (sock?.logout) {
+    try {
+      await sock.logout()
+      logoutSucceeded = true
+    } catch (error) {
+      logoutMessage = error instanceof Error ? error.message : String(error)
+      logger.warn(`Logout device gagal, sesi tetap akan dihapus: ${logoutMessage}`)
+    }
+  }
+
+  await clearSessionFiles()
+  const result = scheduleRestart(
+    'Logout device diminta. Sesi WhatsApp dibersihkan lalu bot restart untuk pairing ulang.',
+    'manual-logout',
+  )
+
+  return {
+    ...result,
+    loggedOut: logoutSucceeded,
+    message: logoutSucceeded
+      ? 'Device WhatsApp logout dan sesi dihapus. Bot akan restart sebentar lagi.'
+      : 'Sesi dihapus. Bot akan restart sebentar lagi.',
+    warning: logoutMessage || undefined,
+  }
+}
+
+async function setBotEnabled(enabled) {
+  const settings = await systemSettings.set(
+    { botEnabled: Boolean(enabled) },
+    { source: 'dashboard', role: 'admin', jid: 'dashboard' },
+  )
+  logger.warn(`Bot ${settings.botEnabled ? 'diaktifkan' : 'dinonaktifkan'} dari dashboard.`)
+
+  return {
+    botEnabled: settings.botEnabled,
+    message: settings.botEnabled
+      ? 'Bot aktif lagi dan akan merespons pesan.'
+      : 'Bot dinonaktifkan. Device tetap tertaut, tetapi bot tidak akan merespons pesan.',
+  }
+}
+
 async function handleGroupParticipantsUpdate(sock, event) {
   const settings = groupSettings.get(event.id)
   const shouldWelcome = event.action === 'add' && settings.welcome
@@ -275,16 +410,22 @@ async function handleGroupParticipantsUpdate(sock, event) {
   }
 }
 
-async function getParticipantState(sock, chatJid, sender) {
+async function getParticipantState(sock, chatJid, senderJids) {
   const metadata = await sock.groupMetadata(chatJid)
   const participants = metadata.participants || []
-  const member = participants.find((entry) => normalizeJid(entry.id) === normalizeJid(sender))
+  const aliases = Array.isArray(senderJids) ? senderJids.map((jid) => normalizeJid(jid)) : []
+  const member = participants.find((entry) =>
+    [entry.id, entry.jid, entry.lid, entry.phoneNumber].some((jid) =>
+      aliases.includes(normalizeJid(jid)),
+    ),
+  )
   const botMember = participants.find(
     (entry) => normalizeJid(entry.id) === normalizeJid(sock.user?.id),
   )
 
   return {
     metadata,
+    senderJid: member?.id || aliases[0] || '',
     senderAdmin: Boolean(member?.admin),
     botAdmin: Boolean(botMember?.admin),
   }
@@ -301,15 +442,16 @@ async function handleAntiLink({ body, message, owner, reply, sock }) {
     return false
   }
 
-  const sender = getSenderJid(message)
-  const { senderAdmin, botAdmin } = await getParticipantState(sock, chatJid, sender)
+  const senderJids = getSenderJids(message)
+  const sender = senderJids[0] || ''
+  const { senderAdmin, botAdmin, senderJid } = await getParticipantState(sock, chatJid, senderJids)
 
   if (owner || senderAdmin) {
     return false
   }
 
   if (settings.antiLink === 'kick' && botAdmin) {
-    await sock.groupParticipantsUpdate(chatJid, [sender], 'remove')
+    await sock.groupParticipantsUpdate(chatJid, [senderJid || sender], 'remove')
     await reply(`Link terdeteksi. ${toMention(sender)} dikeluarkan karena anti-link aktif.`)
     return true
   }
@@ -343,12 +485,15 @@ async function handleAutoResponder({ body, message, reply }) {
 
 async function handleAutoAi({ body, message, reply, sock }) {
   const chatJid = getChatJid(message)
-  if (!chatJid.endsWith('@g.us')) {
-    return false
-  }
+  const runtimeConfig = buildRuntimeConfig()
+  const globalSettings = settingsService.getSettings()
+  const groupMode = chatJid.endsWith('@g.us')
+  const settings = groupMode ? groupSettings.get(chatJid) : null
+  const groupTriggered = groupMode && settings?.aiReply && shouldTriggerAutoAi(message, body, sock)
+  const privateTriggered =
+    !groupMode && globalSettings.autoReply.enabled && globalSettings.autoReply.mode !== 'off'
 
-  const settings = groupSettings.get(chatJid)
-  if (!settings.aiReply || !aiIsConfigured(config) || !shouldTriggerAutoAi(message, body, sock)) {
+  if (!groupTriggered && !privateTriggered) {
     return false
   }
 
@@ -359,17 +504,22 @@ async function handleAutoAi({ body, message, reply, sock }) {
 
   const metadata = await sock.groupMetadata(chatJid).catch(() => null)
   const sender = getSenderJid(message)
-  const result = await generateAiReply({
-    config,
+  const result = await resolveAssistantReply({
+    config: runtimeConfig,
+    settingsService,
     prompt,
     context: [
-      `Grup: ${metadata?.subject || chatJid}`,
+      `${groupMode ? 'Grup' : 'Chat'}: ${metadata?.subject || chatJid}`,
       `Pengirim: ${toMention(sender)}`,
       `Balas dalam bahasa Indonesia.`,
     ].join('\n'),
   })
 
-  await reply(result)
+  if (!result.text) {
+    return false
+  }
+
+  await reply(result.text)
   return true
 }
 
@@ -384,8 +534,9 @@ async function handleAntiBadword({ body, message, owner, reply, sock }) {
     return false
   }
 
-  const sender = getSenderJid(message)
-  const { senderAdmin } = await getParticipantState(sock, chatJid, sender)
+  const senderJids = getSenderJids(message)
+  const sender = senderJids[0] || ''
+  const { senderAdmin } = await getParticipantState(sock, chatJid, senderJids)
   if (owner || senderAdmin) {
     return false
   }
@@ -414,8 +565,9 @@ async function handleAntiSpam({ body, isCommand, message, owner, reply, sock }) 
     return false
   }
 
-  const sender = getSenderJid(message)
-  const { senderAdmin } = await getParticipantState(sock, chatJid, sender)
+  const senderJids = getSenderJids(message)
+  const sender = senderJids[0] || ''
+  const { senderAdmin } = await getParticipantState(sock, chatJid, senderJids)
   if (owner || senderAdmin) {
     return false
   }
@@ -494,9 +646,34 @@ async function handleCallProtection(sock, calls = []) {
   }
 }
 
+async function readLegacyJson(fileName) {
+  const fileUrl = new URL(`../data/${fileName}`, import.meta.url)
+  const raw = await readFile(fileUrl, 'utf8').catch(() => '')
+  if (!raw) {
+    return {}
+  }
+
+  return JSON.parse(raw)
+}
+
+async function migrateLegacySettings() {
+  const [legacySystem, legacyGroups] = await Promise.all([
+    readLegacyJson('system-settings.json'),
+    readLegacyJson('group-settings.json'),
+  ])
+  const imported = await settingsService.importLegacySettings({
+    system: legacySystem,
+    groups: legacyGroups,
+  })
+
+  if (imported) {
+    logger.info('Legacy settings berhasil dimigrasikan ke app-database.json.')
+  }
+}
+
 async function boot() {
-  await groupSettings.load()
-  await systemSettings.load()
+  await settingsService.load()
+  await migrateLegacySettings()
   await userStore.load()
   await registry.load()
   state.commandCount = registry.count()
@@ -512,12 +689,10 @@ async function boot() {
     version,
   })
   runtime.sock = sock
-  runtime.registered = Boolean(sock.authState.creds.registered)
-
-  await ensurePairingCode(sock)
+  runtime.registered = resolveRegistered(sock)
 
   sock.ev.on('creds.update', (...args) => {
-    runtime.registered = Boolean(sock.authState.creds.registered)
+    runtime.registered = resolveRegistered(sock)
     return saveCreds(...args)
   })
 
@@ -542,7 +717,7 @@ async function boot() {
       state.connection = 'open'
       state.lastConnectedAt = new Date().toISOString()
       state.lastDisconnectReason = null
-      runtime.registered = true
+      runtime.registered = resolveRegistered(sock)
       runtime.latestQr = null
       runtime.latestQrAt = null
       logger.success(`${config.botName} berhasil terhubung.`)
@@ -556,7 +731,7 @@ async function boot() {
 
       state.connection = 'closed'
       state.lastDisconnectReason = String(statusCode)
-      runtime.registered = Boolean(sock.authState.creds.registered)
+      runtime.registered = resolveRegistered(sock)
 
       if (statusCode === DisconnectReason.loggedOut) {
         await clearSessionFiles()
@@ -582,24 +757,70 @@ async function boot() {
     }
 
     const message = messages[0]
-    if (!message?.message || message.key.remoteJid === 'status@broadcast') {
+    const chatJid = getChatJid(message)
+    if (!message?.message || chatJid === 'status@broadcast') {
+      return
+    }
+
+    if (message.key.fromMe) {
       return
     }
 
     const body = extractText(message).trim()
-    const sender = message.key.participant || message.key.remoteJid || ''
-    const owner = isOwner(sender, config) || message.key.fromMe
+    const senderJids = await resolveSenderJids(sock, getSenderJids(message))
+    const sender = senderJids[0] || ''
+    if (!chatJid || !sender) {
+      logger.warn('Pesan masuk diabaikan karena chatJid atau sender kosong.')
+      return
+    }
+
+    const runtimeConfig = buildRuntimeConfig()
+    const settings = settingsService.getSettings()
+    const parsedCommand = parseCommand(body, runtimeConfig, settings)
+    const role = getRole(senderJids, config, settingsService)
+    const owner = role === 'owner'
+    const system = systemSettings.get()
 
     if (config.botMode === 'private' && !owner) {
       return
     }
 
-    const reply = async (text) =>
-      sock.sendMessage(message.key.remoteJid, { text }, { quoted: message })
+    await settingsService
+      .logMessage({
+        direction: 'in',
+        chatJid,
+        sender,
+        body,
+        role,
+        isCommand: parsedCommand.isCommand,
+        commandName: parsedCommand.name || null,
+        workflow: buildWorkflowTrace({
+          isCommand: parsedCommand.isCommand,
+          role,
+          mode: parsedCommand.isCommand ? 'command_mode' : 'workflow_router',
+          commandName: parsedCommand.name || null,
+        }),
+      })
+      .catch((error) => logger.warn(`Log pesan masuk gagal: ${error.message}`))
+
+    if (!system.botEnabled && !(parsedCommand.isCommand && canManageSettings(role))) {
+      return
+    }
+
+    const reply = createReply(sock, message, chatJid, senderJids)
+
+    if (
+      !isInsideActiveHours(settings) &&
+      !parsedCommand.isCommand &&
+      !canManageSettings(role)
+    ) {
+      await reply(settings.handoffMessage)
+      return
+    }
 
     try {
       await trackUserProgress({
-        isCommand: body.startsWith(config.prefix),
+        isCommand: parsedCommand.isCommand,
         message,
         reply,
       })
@@ -610,7 +831,7 @@ async function boot() {
     try {
       const blockedBySpam = await handleAntiSpam({
         body,
-        isCommand: body.startsWith(config.prefix),
+        isCommand: parsedCommand.isCommand,
         message,
         owner,
         reply,
@@ -623,15 +844,20 @@ async function boot() {
       logger.warn(`Anti-spam gagal: ${error.message}`)
     }
 
-    if (body.startsWith(config.prefix)) {
-      const commandLine = body.slice(config.prefix.length).trim()
-      if (!commandLine) {
+    if (parsedCommand.isCommand) {
+      if (!parsedCommand.commandLine) {
         return
       }
 
-      const [rawName, ...args] = commandLine.split(/\s+/)
-      const command = registry.get(rawName.toLowerCase())
+      const resolvedName = settingsService.resolveCommandName(parsedCommand.name)
+      const command = registry.get(resolvedName)
       if (!command) {
+        await reply(settings.fallbackMessage)
+        return
+      }
+
+      if (!toolRegistry.isEnabled(command)) {
+        await reply(`Tool ${command.name} sedang nonaktif. Admin bisa mengaktifkan via /tool on ${command.name}.`)
         return
       }
 
@@ -640,30 +866,43 @@ async function boot() {
         return
       }
 
+      if (command.adminOnly && !canManageSettings(role)) {
+        await reply('Perintah ini khusus owner/admin bot.')
+        return
+      }
+
       try {
         await command.execute({
-          args,
+          args: parsedCommand.args,
           body,
-          config,
+          chatJid,
+          config: runtimeConfig,
           groupSettings,
-        message,
-        owner,
-        registry,
-        reply,
-        sock,
-        state,
-        systemSettings,
-        userStore,
-      })
-      state.commandCount = registry.count()
+          message,
+          owner,
+          registry,
+          reply,
+          role,
+          sender,
+          senderJids,
+          settingsService,
+          sock,
+          state,
+          systemSettings,
+          toolRegistry,
+          userStore,
+        })
+        await toolRegistry.markUsed(command, true)
+        state.commandCount = registry.count()
       } catch (error) {
+        await toolRegistry.markUsed(command, false).catch(() => {})
         logger.error(`Command ${command.name} gagal: ${error.message}`)
         await reply(`Perintah gagal: ${error.message}`)
       }
       return
     }
 
-    if (!body || message.key.fromMe) {
+    if (!body) {
       return
     }
 
@@ -699,12 +938,28 @@ async function boot() {
         return
       }
 
-      await handleAutoAi({
+      if (settings.autoReply.enabled && settings.autoReply.mode !== 'off') {
+        const faq = settingsService.findFaqAnswer(body)
+        if (faq) {
+          await reply(faq.answer)
+          return
+        }
+      }
+
+      const aiReplied = await handleAutoAi({
         body,
         message,
         reply,
         sock,
       })
+      if (
+        !aiReplied &&
+        !chatJid.endsWith('@g.us') &&
+        settings.autoReply.enabled &&
+        settings.autoReply.mode !== 'off'
+      ) {
+        await reply(settings.fallbackMessage)
+      }
     } catch (error) {
       logger.warn(`Otomasi pesan gagal: ${error.message}`)
     }
@@ -717,11 +972,23 @@ async function boot() {
   sock.ev.on('call', async (calls) => {
     await handleCallProtection(sock, calls)
   })
+
+  if (!sock.authState.creds.registered) {
+    logger.info(
+      `Device belum tertaut. Ambil QR dari dashboard atau minta kode pairing lewat tombol Pairing Console.`,
+    )
+  }
 }
 
 startHealthServer(config, state, runtime, {
   requestPairingCode,
   resetSession,
+  logoutDevice,
+  setBotEnabled,
+  settingsService,
+  toolRegistry,
+  registry,
+  getSystemSettings: () => systemSettings.get(),
   getCommands: () =>
     registry.list().map((entry) => ({
       name: entry.name,
@@ -729,10 +996,21 @@ startHealthServer(config, state, runtime, {
       category: entry.category,
       description: entry.description,
       ownerOnly: entry.ownerOnly,
+      adminOnly: entry.adminOnly,
     })),
+  getTools: () => toolRegistry.list(registry),
 })
 
-boot().catch((error) => {
-  logger.error(`Boot gagal: ${error.message}`)
-  process.exitCode = 1
-})
+function bootWithRetry() {
+  boot().catch((error) => {
+    state.connection = 'boot-failed'
+    state.lastDisconnectReason = error instanceof Error ? error.message : String(error)
+    logger.error(`Boot gagal: ${state.lastDisconnectReason}`)
+
+    setTimeout(() => {
+      bootWithRetry()
+    }, 3000)
+  })
+}
+
+bootWithRetry()

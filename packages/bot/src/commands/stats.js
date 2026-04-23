@@ -13,7 +13,6 @@ export default {
       (accumulator, settings) => {
         if (settings.welcome) accumulator.welcome += 1
         if (settings.goodbye) accumulator.goodbye += 1
-        if (settings.aiReply) accumulator.aiReply += 1
         if (settings.autoResponder) accumulator.autoResponder += 1
         if (settings.antiSpam) accumulator.antiSpam += 1
         if (settings.antiBadword) accumulator.antiBadword += 1
@@ -25,7 +24,6 @@ export default {
       {
         welcome: 0,
         goodbye: 0,
-        aiReply: 0,
         autoResponder: 0,
         antiSpam: 0,
         antiBadword: 0,
@@ -42,6 +40,7 @@ export default {
         `┃ Mode: ${config.botMode}`,
         `┃ Prefix: ${config.prefix}`,
         `┃ Koneksi: ${state.connection}`,
+        `┃ Bot aktif: ${system.botEnabled ? 'aktif ✅' : 'mati ❌'}`,
         `┃ Total Command: ${registry.count()}`,
         `┃ Grup Terkonfigurasi: ${totalGroups}`,
         `┃ Total User: ${users.length}`,
@@ -54,7 +53,6 @@ export default {
         `┃ Anti-link: ${totals.antiLink}`,
         `┃ Anti-spam: ${totals.antiSpam}`,
         `┃ Anti-badword: ${totals.antiBadword}`,
-        `┃ AI Reply: ${totals.aiReply}`,
         `┃ Auto-responder: ${totals.autoResponder}`,
         `┃ Keyword Reply: ${totals.autoReplies}`,
         `┃ Total Badword: ${totals.badWords}`,

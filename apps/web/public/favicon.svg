@@ -1,16 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mybeebot bee icon">
-  <defs>
-    <linearGradient id="wing" x1="0" x2="1">
-      <stop offset="0%" stop-color="#fff7df" />
-      <stop offset="100%" stop-color="#ffd470" />
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="18" fill="#120d05" />
-  <circle cx="24" cy="24" r="10" fill="url(#wing)" opacity=".95" />
-  <circle cx="40" cy="24" r="10" fill="url(#wing)" opacity=".95" />
-  <ellipse cx="32" cy="36" rx="18" ry="14" fill="#ffb300" />
-  <rect x="18" y="30" width="28" height="4" rx="2" fill="#2c1c00" />
-  <rect x="18" y="38" width="28" height="4" rx="2" fill="#2c1c00" />
-  <circle cx="26" cy="34" r="2" fill="#120d05" />
-  <circle cx="38" cy="34" r="2" fill="#120d05" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mybeebot logo">
+  <rect width="64" height="64" rx="14" fill="#111111" />
+  <path
+    d="M16 30.5c0-8.8 7.1-15.8 16-15.8s16 7 16 15.8c0 8.6-7.1 15.5-16 15.5s-16-6.9-16-15.5Z"
+    fill="#f4bd18"
+  />
+  <path
+    d="M18.1 27.2c1.5-6.5 7.1-10.9 13.9-10.9s12.4 4.4 13.9 10.9c-4.2-1.2-8.8-1.8-13.9-1.8s-9.7.6-13.9 1.8Z"
+    fill="#ffd236"
+  />
+  <path
+    d="M18.7 31.2h9.8c2.2 0 4 1.8 4 4v.5c0 2.2-1.8 4-4 4h-3.1c-4.1 0-7.4-3.3-7.4-7.4 0-.6.3-1.1.7-1.1Zm16.8 0h9.8c.4 0 .7.5.7 1.1 0 4.1-3.3 7.4-7.4 7.4h-3.1c-2.2 0-4-1.8-4-4v-.5c0-2.2 1.8-4 4-4Z"
+    fill="#151515"
+  />
+  <path d="M29.5 34.4h5" stroke="#151515" stroke-width="3.2" stroke-linecap="round" />
+  <path
+    d="M22.8 26.1c-3.4-1.4-5.5-3.3-6.5-5.8"
+    stroke="#f4bd18"
+    stroke-width="3.2"
+    stroke-linecap="round"
+  />
+  <path
+    d="M41.2 26.1c3.4-1.4 5.5-3.3 6.5-5.8"
+    stroke="#f4bd18"
+    stroke-width="3.2"
+    stroke-linecap="round"
+  />
+  <path d="M24.3 44.6c2.3 1.5 4.8 2.2 7.7 2.2s5.4-.7 7.7-2.2" stroke="#b77b05" stroke-width="2.8" stroke-linecap="round" />
 </svg>

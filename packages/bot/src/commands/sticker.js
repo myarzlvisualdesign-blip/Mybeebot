@@ -1,4 +1,5 @@
 import { makeStickerFromMessage } from '../lib/media-utils.js'
+import { getChatJid } from '../lib/group-utils.js'
 
 export default {
   name: 'sticker',
@@ -14,7 +15,7 @@ export default {
     })
 
     await sock.sendMessage(
-      message.key.remoteJid,
+      getChatJid(message),
       {
         sticker,
       },

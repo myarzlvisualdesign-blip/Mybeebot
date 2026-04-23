@@ -1,6 +1,5 @@
 const categoryMeta = {
   inti: { icon: '⚡', title: 'Inti' },
-  ai: { icon: '🤖', title: 'AI' },
   media: { icon: '🎬', title: 'Media' },
   grup: { icon: '👥', title: 'Grup' },
   utilitas: { icon: '🧰', title: 'Utilitas' },
@@ -86,7 +85,7 @@ export default {
         '',
         ...sections,
         '',
-        `📌 Ketik *${config.prefix}menu ai* untuk filter kategori.`,
+        `📌 Ketik *${config.prefix}menu media* untuk filter kategori.`,
         `📌 Ketik *${config.prefix}menu ping* untuk lihat detail command.`,
       ].join('\n'),
     )

@@ -1,4 +1,5 @@
 import { cleanupJob, convertMediaToMp3 } from '../lib/media-utils.js'
+import { getChatJid } from '../lib/group-utils.js'
 
 export default {
   name: 'tomp3',
@@ -16,7 +17,7 @@ export default {
 
     try {
       await sock.sendMessage(
-        message.key.remoteJid,
+        getChatJid(message),
         {
           audio: {
             url: result.outputPath,

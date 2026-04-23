@@ -1,5 +1,5 @@
 import { cleanNumber, isOwner } from '../lib/message-utils.js'
-import { getSenderJid } from '../lib/group-utils.js'
+import { getSenderJid, getSenderJids } from '../lib/group-utils.js'
 
 function normalizeTarget(input) {
   const digits = cleanNumber(input)
@@ -13,7 +13,8 @@ export default {
   description: 'Cek status premium atau kelola user premium untuk owner.',
   async execute({ args, config, message, reply, userStore }) {
     const sender = getSenderJid(message)
-    const owner = isOwner(sender, config) || Boolean(message?.key?.fromMe)
+    const senderJids = getSenderJids(message)
+    const owner = senderJids.some((jid) => isOwner(jid, config)) || Boolean(message?.key?.fromMe)
     const action = String(args[0] || '').toLowerCase()
 
     if (!action) {

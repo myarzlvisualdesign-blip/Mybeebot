@@ -3,6 +3,7 @@ import path from 'node:path'
 
 const defaults = {
   antiCall: true,
+  botEnabled: true,
 }
 
 export class SystemSettingsStore {

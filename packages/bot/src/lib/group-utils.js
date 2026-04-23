@@ -1,15 +1,82 @@
 import { cleanNumber } from './message-utils.js'
 
+function uniqueNormalizedJids(values) {
+  return [
+    ...new Set(
+      values
+        .map((value) => normalizeJid(value))
+        .filter(Boolean),
+    ),
+  ]
+}
+
 export function getChatJid(message) {
-  return message?.key?.remoteJid || ''
+  return normalizeJid(message?.key?.remoteJid || message?.key?.remoteJidAlt || '')
 }
 
 export function getSenderJid(message) {
-  return message?.key?.participant || message?.key?.remoteJid || ''
+  return getSenderJids(message)[0] || ''
+}
+
+export function getSenderJids(message) {
+  const key = message?.key || {}
+  const participantJids = uniqueNormalizedJids([
+    key.participant,
+    key.participantAlt,
+    key.participantPn,
+    key.participantLid,
+    key.senderJid,
+    key.senderPn,
+    key.senderLid,
+    message?.participant,
+    message?.participantAlt,
+    message?.participantPn,
+    message?.participantLid,
+  ])
+
+  if (participantJids.length) {
+    return participantJids
+  }
+
+  return uniqueNormalizedJids([
+    key.remoteJid,
+    key.remoteJidAlt,
+    key.remoteJidPn,
+    key.remoteJidLid,
+    key.pnJid,
+    key.lidJid,
+  ])
+}
+
+export async function resolveSenderJids(sock, senderJids = []) {
+  const resolvedJids = [...senderJids]
+  const lidMapping = sock?.signalRepository?.lidMapping
+
+  if (!lidMapping?.getPNForLID) {
+    return uniqueNormalizedJids(resolvedJids)
+  }
+
+  for (const jid of senderJids) {
+    const normalized = normalizeJid(jid)
+    if (!normalized.endsWith('@lid')) {
+      continue
+    }
+
+    const phoneJid = await lidMapping.getPNForLID(normalized).catch(() => null)
+    if (phoneJid) {
+      resolvedJids.push(phoneJid)
+    }
+  }
+
+  return uniqueNormalizedJids(resolvedJids)
 }
 
 export function isGroupChat(message) {
-  return getChatJid(message).endsWith('@g.us')
+  return isGroupJid(getChatJid(message))
+}
+
+export function isGroupJid(jid) {
+  return String(jid || '').endsWith('@g.us')
 }
 
 export function toMention(id) {
@@ -101,9 +168,14 @@ export function isConfiguredOwner(sender, config) {
 
 export async function ensureGroupAdmin(sock, message, config) {
   const { jid, metadata, participants } = await getGroupContext(sock, message)
-  const sender = getSenderJid(message)
-  const participant = participants.find((entry) => entry.id === sender)
-  const owner = isConfiguredOwner(sender, config) || Boolean(message?.key?.fromMe)
+  const senderJids = getSenderJids(message)
+  const sender = senderJids[0] || ''
+  const participant = participants.find((entry) =>
+    [entry.id, entry.jid, entry.lid, entry.phoneNumber].some((jid) =>
+      senderJids.includes(normalizeJid(jid)),
+    ),
+  )
+  const owner = senderJids.some((jid) => isConfiguredOwner(jid, config)) || Boolean(message?.key?.fromMe)
   const admin = owner || Boolean(participant?.admin)
   const botParticipant = participants.find(
     (entry) => normalizeJid(entry.id) === normalizeJid(sock.user?.id),

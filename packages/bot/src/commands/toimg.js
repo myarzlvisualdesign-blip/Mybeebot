@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { getChatJid } from '../lib/group-utils.js'
 import { cleanupJob, prepareMediaInput } from '../lib/media-utils.js'
 
 export default {
@@ -21,7 +22,7 @@ export default {
       const imageBuffer = await sharp(prepared.buffer).png().toBuffer()
 
       await sock.sendMessage(
-        message.key.remoteJid,
+        getChatJid(message),
         {
           image: imageBuffer,
           caption: '✅ Stiker berhasil diubah jadi gambar.',

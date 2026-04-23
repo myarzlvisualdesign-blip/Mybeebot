@@ -31,6 +31,7 @@ export class CommandRegistry {
       const normalized = {
         aliases: [],
         category: 'core',
+        adminOnly: false,
         ownerOnly: false,
         ...command,
       }
